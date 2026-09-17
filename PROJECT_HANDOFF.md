@@ -43,6 +43,20 @@ ThermoTrack Web Dashboard (React 19 + TypeScript + Vite)
 
 ---
 
+## Database Architecture & Organization Decision
+
+- **Database**: Smartwear Supabase project (`tthwnsjfsrxtjiwgalmc`)
+- **SmartWear**: `public` schema with existing SmartWear tables (`profiles`, `budgets`, `expenses`, `hydration_logs`, `sensor_readings`, `workouts`, `alerts`, `settings`).
+- **ThermoTrack**: `public` schema with dedicated `thermo_*` table names (`thermo_teams`, `thermo_athletes`, `thermo_readings`, `thermo_devices`, `thermo_alerts`, `thermo_sessions`, `thermo_settings`).
+- **Architecture Decision**: **Option A — public schema with thermo_* namespacing**.
+- **Reason**: 
+  1. Zero cross-application dependencies or foreign keys exist between SmartWear and ThermoTrack tables.
+  2. Zero SmartWear code references `thermo_*` tables; zero ThermoTrack code references SmartWear tables.
+  3. Avoids PostgREST multi-schema routing header requirements (`Content-Profile` / `Accept-Profile`) on constrained microcontrollers (ESP8266 / ESP32 NodeMCU).
+  4. Keeps Supabase Realtime subscriptions and Auth operations simple and reliable without requiring custom exposed schema API settings.
+
+---
+
 ## Database Tables (Verified in Supabase `Smartwear` - `tthwnsjfsrxtjiwgalmc`)
 1. `thermo_teams`: Team and organization profiles (`id`, `user_id`, `name`, `coach_name`, `country_region`, `description`, `sport`, `default_category`, `onboarding_completed`, `created_at`, `updated_at`).
 2. `thermo_athletes`: Athlete registry (`id`, `team_id`, `name`, `athlete_code`, `athlete_id`, `sport`, `category`, `age`, `position_event`, `experience_level`, `sensor_id`, `device_id`, `emergency_contact_name`, `emergency_contact_phone`, `status`, `user_id`, `created_at`, `updated_at`).
