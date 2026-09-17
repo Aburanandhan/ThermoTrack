@@ -65,54 +65,40 @@ export function OnboardingPage() {
   const [selectedCategory, setSelectedCategory] = useState<string>('Sprint')
   const [customCategory, setCustomCategory] = useState<string>('')
 
+  const effectiveSport = selectedSport === 'Other' ? (customSport.trim() || 'Other') : selectedSport
+  const effectiveCategory =
+    selectedCategory === 'Other' ? (customCategory.trim() || 'General Squad') : selectedCategory
+
+  const createDefaultAthleteDraft = (index: number, sport: string, category: string): AthleteDraft => {
+    const numStr = String(index + 1).padStart(3, '0')
+    return {
+      id: `ath_draft_${Date.now()}_${index + 1}`,
+      name: '',
+      athleteId: `ATH-${numStr}`,
+      sport,
+      category,
+      age: '',
+      positionEvent: '',
+      experienceLevel: '',
+      emergencyContactName: '',
+      emergencyContactPhone: '',
+      sensorId: '',
+    }
+  }
+
   // Step 3: Athletes roster
   const [athleteCount, setAthleteCount] = useState<number>(3)
-  const [athleteDrafts, setAthleteDrafts] = useState<AthleteDraft[]>([
-    {
-      id: 'ath_draft_1',
-      name: '',
-      athleteId: 'ATH-001',
-      sport: 'Track & Field',
-      category: 'Sprint',
-      age: '',
-      positionEvent: '',
-      experienceLevel: '',
-      emergencyContactName: '',
-      emergencyContactPhone: '',
-      sensorId: '',
-    },
-    {
-      id: 'ath_draft_2',
-      name: '',
-      athleteId: 'ATH-002',
-      sport: 'Track & Field',
-      category: 'Sprint',
-      age: '',
-      positionEvent: '',
-      experienceLevel: '',
-      emergencyContactName: '',
-      emergencyContactPhone: '',
-      sensorId: '',
-    },
-    {
-      id: 'ath_draft_3',
-      name: '',
-      athleteId: 'ATH-003',
-      sport: 'Track & Field',
-      category: 'Sprint',
-      age: '',
-      positionEvent: '',
-      experienceLevel: '',
-      emergencyContactName: '',
-      emergencyContactPhone: '',
-      sensorId: '',
-    },
+  const [athleteDrafts, setAthleteDrafts] = useState<AthleteDraft[]>(() => [
+    createDefaultAthleteDraft(0, 'Track & Field', 'Sprint'),
+    createDefaultAthleteDraft(1, 'Track & Field', 'Sprint'),
+    createDefaultAthleteDraft(2, 'Track & Field', 'Sprint'),
   ])
 
   // Submission & Error State
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [createdCount, setCreatedCount] = useState(0)
+
   // If user already completed onboarding, redirect to overview
   if (!isAuthenticated) {
     return <Navigate to="/signin" replace />
@@ -122,25 +108,59 @@ export function OnboardingPage() {
     return <Navigate to="/" replace />
   }
 
-  const effectiveSport = selectedSport === 'Other' ? (customSport.trim() || 'Other') : selectedSport
-  const effectiveCategory =
-    selectedCategory === 'Other' ? (customCategory.trim() || 'General Squad') : selectedCategory
-
-  // Handle sport change: sync defaults and athlete forms
+  // Handle sport change: sync defaults and all athlete drafts
   const handleSportChange = (sportName: string) => {
     setSelectedSport(sportName)
     const cats = getCategoriesForSport(sportName)
     const defaultCat = cats[0] || 'General Squad'
     setSelectedCategory(defaultCat)
+    const targetSport = sportName === 'Other' ? customSport.trim() || 'Other' : sportName
 
-    // Update athlete drafts that match previous team sport
+    // Reset and align all dependent athlete values to the newly selected sport
     setAthleteDrafts((current) =>
       current.map((ath) => ({
         ...ath,
-        sport: sportName === 'Other' ? customSport : sportName,
+        sport: targetSport,
         category: defaultCat,
       })),
     )
+  }
+
+  const handleCustomSportChange = (sportName: string) => {
+    setCustomSport(sportName)
+    if (selectedSport === 'Other') {
+      const targetSport = sportName.trim() || 'Other'
+      setAthleteDrafts((current) =>
+        current.map((ath) => ({
+          ...ath,
+          sport: targetSport,
+        })),
+      )
+    }
+  }
+
+  const handleCategoryChange = (categoryName: string) => {
+    setSelectedCategory(categoryName)
+    const targetCategory = categoryName === 'Other' ? customCategory.trim() || 'General Squad' : categoryName
+    setAthleteDrafts((current) =>
+      current.map((ath) => ({
+        ...ath,
+        category: targetCategory,
+      })),
+    )
+  }
+
+  const handleCustomCategoryChange = (categoryName: string) => {
+    setCustomCategory(categoryName)
+    if (selectedCategory === 'Other') {
+      const targetCategory = categoryName.trim() || 'General Squad'
+      setAthleteDrafts((current) =>
+        current.map((ath) => ({
+          ...ath,
+          category: targetCategory,
+        })),
+      )
+    }
   }
 
   // Handle athlete count change
@@ -152,20 +172,7 @@ export function OnboardingPage() {
       if (validCount > current.length) {
         const additions: AthleteDraft[] = []
         for (let i = current.length; i < validCount; i++) {
-          const numStr = String(i + 1).padStart(3, '0')
-          additions.push({
-            id: `ath_draft_${Date.now()}_${i + 1}`,
-            name: '',
-            athleteId: `ATH-${numStr}`,
-            sport: effectiveSport,
-            category: effectiveCategory,
-            age: '',
-            positionEvent: '',
-            experienceLevel: '',
-            emergencyContactName: '',
-            emergencyContactPhone: '',
-            sensorId: '',
-          })
+          additions.push(createDefaultAthleteDraft(i, effectiveSport, effectiveCategory))
         }
         return [...current, ...additions]
       } else if (validCount < current.length) {
@@ -176,21 +183,8 @@ export function OnboardingPage() {
   }
 
   const handleAddAthlete = () => {
-    const nextNum = athleteDrafts.length + 1
-    const numStr = String(nextNum).padStart(3, '0')
-    const newDraft: AthleteDraft = {
-      id: `ath_draft_${Date.now()}_${nextNum}`,
-      name: '',
-      athleteId: `ATH-${numStr}`,
-      sport: effectiveSport,
-      category: effectiveCategory,
-      age: '',
-      positionEvent: '',
-      experienceLevel: '',
-      emergencyContactName: '',
-      emergencyContactPhone: '',
-      sensorId: '',
-    }
+    const nextNum = athleteDrafts.length
+    const newDraft = createDefaultAthleteDraft(nextNum, effectiveSport, effectiveCategory)
     setAthleteDrafts((curr) => [...curr, newDraft])
     setAthleteCount((c) => c + 1)
   }
@@ -204,7 +198,11 @@ export function OnboardingPage() {
   const handleUpdateAthlete = (index: number, patch: Partial<AthleteDraft>) => {
     setAthleteDrafts((curr) => {
       const copy = [...curr]
-      copy[index] = { ...copy[index], ...patch }
+      copy[index] = {
+        ...copy[index],
+        ...patch,
+        sport: effectiveSport,
+      }
       return copy
     })
   }
@@ -237,13 +235,19 @@ export function OnboardingPage() {
     }
     setFormError(null)
 
-    // Propagate default sport & category to empty athlete fields
+    const validCategories = getCategoriesForSport(effectiveSport)
+
+    // Reconcile and guarantee every draft has the current effective sport and a valid category
     setAthleteDrafts((curr) =>
-      curr.map((a) => ({
-        ...a,
-        sport: a.sport || effectiveSport,
-        category: a.category || effectiveCategory,
-      })),
+      curr.map((a) => {
+        const isValidCat =
+          validCategories.includes(a.category) || (selectedCategory === 'Other' && a.category === effectiveCategory)
+        return {
+          ...a,
+          sport: effectiveSport,
+          category: isValidCat ? a.category : effectiveCategory,
+        }
+      }),
     )
     setCurrentStep('athletes')
   }
@@ -297,7 +301,7 @@ export function OnboardingPage() {
         athletes: athleteDrafts.map((draft) => ({
           name: draft.name.trim(),
           athleteId: draft.athleteId.trim().toUpperCase(),
-          sport: draft.sport.trim() || effectiveSport,
+          sport: effectiveSport,
           category: draft.category.trim() || effectiveCategory,
           age: draft.age ? parseInt(draft.age, 10) : null,
           positionEvent: draft.positionEvent.trim() || null,
@@ -546,7 +550,7 @@ export function OnboardingPage() {
                       type="text"
                       required
                       value={customSport}
-                      onChange={(e) => setCustomSport(e.target.value)}
+                      onChange={(e) => handleCustomSportChange(e.target.value)}
                       placeholder="e.g. Rowing / Kayaking"
                       className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 px-3.5 text-xs outline-none focus:border-teal"
                     />
@@ -569,7 +573,7 @@ export function OnboardingPage() {
                       <button
                         key={cat}
                         type="button"
-                        onClick={() => setSelectedCategory(cat)}
+                        onClick={() => handleCategoryChange(cat)}
                         className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
                           isSelected
                             ? 'border-navy bg-navy text-white shadow-xs'
@@ -582,7 +586,7 @@ export function OnboardingPage() {
                   })}
                   <button
                     type="button"
-                    onClick={() => setSelectedCategory('Other')}
+                    onClick={() => handleCategoryChange('Other')}
                     className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
                       selectedCategory === 'Other'
                         ? 'border-navy bg-navy text-white shadow-xs'
@@ -599,7 +603,7 @@ export function OnboardingPage() {
                       type="text"
                       required
                       value={customCategory}
-                      onChange={(e) => setCustomCategory(e.target.value)}
+                      onChange={(e) => handleCustomCategoryChange(e.target.value)}
                       placeholder="e.g. Lightweight Division / Adaptive"
                       className="h-9 w-full max-w-sm rounded-lg border border-slate-200 px-3 text-xs outline-none focus:border-teal"
                     />
@@ -667,7 +671,12 @@ export function OnboardingPage() {
               {/* Athletes Form List */}
               <div className="mt-6 space-y-4">
                 {athleteDrafts.map((draft, idx) => {
-                  const categories = getCategoriesForSport(draft.sport || effectiveSport)
+                  const categories = getCategoriesForSport(effectiveSport)
+                  const athleteCat =
+                    categories.includes(draft.category) || (selectedCategory === 'Other' && draft.category === effectiveCategory)
+                      ? draft.category
+                      : effectiveCategory
+
                   return (
                     <div
                       key={draft.id}
@@ -681,6 +690,9 @@ export function OnboardingPage() {
                           <h3 className="text-xs font-bold uppercase tracking-wide text-navy">
                             Athlete {String(idx + 1).padStart(2, '0')}
                           </h3>
+                          <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-teal">
+                            {effectiveSport}
+                          </span>
                         </div>
                         {athleteDrafts.length > 1 && (
                           <button
@@ -730,7 +742,7 @@ export function OnboardingPage() {
                         <div>
                           <label className="block text-xs font-semibold text-navy">Category / Discipline</label>
                           <select
-                            value={draft.category}
+                            value={athleteCat}
                             onChange={(e) => handleUpdateAthlete(idx, { category: e.target.value })}
                             className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-xs outline-none focus:border-teal"
                           >
@@ -739,6 +751,9 @@ export function OnboardingPage() {
                                 {c}
                               </option>
                             ))}
+                            {selectedCategory === 'Other' && !categories.includes(effectiveCategory) && (
+                              <option value={effectiveCategory}>{effectiveCategory}</option>
+                            )}
                           </select>
                         </div>
                       </div>
@@ -915,7 +930,7 @@ export function OnboardingPage() {
                         <div>
                           <p className="text-xs font-semibold text-navy">{athlete.name}</p>
                           <p className="text-[11px] text-slate-400">
-                            {athlete.athleteId} · {athlete.sport} ({athlete.category})
+                            {athlete.athleteId} · {effectiveSport} ({athlete.category})
                             {athlete.positionEvent ? ` · ${athlete.positionEvent}` : ''}
                           </p>
                         </div>
