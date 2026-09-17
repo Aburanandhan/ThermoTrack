@@ -71,8 +71,15 @@ export const athleteService = {
       throw new Error('Supabase is not configured.')
     }
 
-    const { data: authData } = await supabase.auth.getUser()
-    const userId = athlete.userId || authData.user?.id
+    let currentUserId = athlete.userId
+    if (!currentUserId) {
+      const { data: sessionData } = await supabase.auth.getSession()
+      currentUserId = sessionData?.session?.user?.id
+    }
+    if (!currentUserId) {
+      const { data: authData } = await supabase.auth.getUser()
+      currentUserId = authData?.user?.id
+    }
     const athleteId = athlete.id || `ath_${Date.now()}`
 
     const { error } = await supabase.from('thermo_athletes').insert({
@@ -89,7 +96,7 @@ export const athleteService = {
       experience_level: athlete.experienceLevel || null,
       emergency_contact_name: athlete.emergencyContactName || null,
       emergency_contact_phone: athlete.emergencyContactPhone || null,
-      user_id: userId || undefined,
+      user_id: currentUserId || undefined,
       status: 'active',
     })
 
@@ -121,8 +128,11 @@ export const athleteService = {
     }
     if (athletes.length === 0) return []
 
-    const { data: authData } = await supabase.auth.getUser()
-    const userId = authData.user?.id
+    let userId = (await supabase.auth.getSession()).data?.session?.user?.id
+    if (!userId) {
+      const { data: authData } = await supabase.auth.getUser()
+      userId = authData?.user?.id
+    }
 
     const rows = athletes.map((a, index) => {
       const id = a.id || `ath_${Date.now()}_${index + 1}`

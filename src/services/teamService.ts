@@ -20,7 +20,15 @@ export const teamService = {
   async getTeam(userId?: string): Promise<TeamProfile | null> {
     if (!isSupabaseConfigured) return null
 
-    const currentUserId = userId || (await supabase.auth.getUser()).data.user?.id
+    let currentUserId = userId
+    if (!currentUserId) {
+      const { data: sessionData } = await supabase.auth.getSession()
+      currentUserId = sessionData?.session?.user?.id
+    }
+    if (!currentUserId) {
+      const { data: authData } = await supabase.auth.getUser()
+      currentUserId = authData?.user?.id
+    }
     if (!currentUserId) return null
 
     const { data, error } = await supabase
@@ -58,6 +66,7 @@ export const teamService = {
   },
 
   async createTeamWithAthletes(payload: {
+    userId?: string | null
     team: {
       name: string
       coachName: string
@@ -84,20 +93,41 @@ export const teamService = {
       throw new Error('Supabase is not configured.')
     }
 
-    const { data: authData, error: authError } = await supabase.auth.getUser()
-    if (authError || !authData.user) {
-      throw new Error('Authenticated coach session required to create a team.')
+    // 1. Resolve current user ID from payload, getSession, or getUser
+    let activeUserId = payload.userId
+    if (!activeUserId) {
+      const { data: sessionData, error: sessionErr } = await supabase.auth.getSession()
+      if (sessionData?.session?.user?.id) {
+        activeUserId = sessionData.session.user.id
+      } else if (sessionErr) {
+        console.warn('getSession warning in createTeamWithAthletes:', sessionErr.message)
+      }
     }
 
-    const userId = authData.user.id
-    const teamId = `team_${userId.substring(0, 8)}_${Date.now()}`
+    if (!activeUserId) {
+      const { data: authData, error: authErr } = await supabase.auth.getUser()
+      if (authData?.user?.id) {
+        activeUserId = authData.user.id
+      } else if (authErr) {
+        console.error('getUser error in createTeamWithAthletes:', authErr.message)
+        throw new Error(`Authentication error: ${authErr.message}`)
+      }
+    }
 
-    // 1. Insert or update team
+    if (!activeUserId) {
+      throw new Error('Authenticated coach session required to create a team. Please verify that you are signed in.')
+    }
+
+    // 2. Reuse existing team ID if one already exists for this coach to prevent duplicate teams
+    const existingTeam = await this.getTeam(activeUserId)
+    const teamId = existingTeam ? existingTeam.id : `team_${activeUserId.substring(0, 8)}_${Date.now()}`
+
+    // 3. Insert or update team
     const { data: teamData, error: teamInsertError } = await supabase
       .from('thermo_teams')
       .upsert({
         id: teamId,
-        user_id: userId,
+        user_id: activeUserId,
         name: payload.team.name.trim(),
         coach_name: payload.team.coachName.trim(),
         country_region: payload.team.countryRegion?.trim() || null,
@@ -111,8 +141,8 @@ export const teamService = {
       .single()
 
     if (teamInsertError) {
-      console.error('Failed to create team:', teamInsertError.message)
-      throw new Error(`Failed to create team: ${teamInsertError.message}`)
+      console.error('Failed to create team in Supabase:', teamInsertError.message)
+      throw new Error(`Database error creating team: ${teamInsertError.message}`)
     }
 
     const createdTeamRow = teamData as unknown as DbTeamRow
@@ -130,13 +160,13 @@ export const teamService = {
       updatedAt: createdTeamRow.updated_at,
     }
 
-    // 2. Insert athletes in batch
+    // 4. Insert athletes in batch
     let createdAthletes: Athlete[] = []
     if (payload.athletes.length > 0) {
       const athleteRecords = payload.athletes.map((ath, index) => ({
         id: `ath_${Date.now()}_${index + 1}`,
         teamId: createdTeam.id,
-        userId: userId,
+        userId: activeUserId,
         name: ath.name.trim(),
         athleteCode: ath.athleteId.trim().toUpperCase(),
         sport: ath.sport || payload.team.sport,

@@ -47,7 +47,7 @@ const STEPS: { id: Step; label: string; number: string }[] = [
 ]
 
 export function OnboardingPage() {
-  const { isAuthenticated, hasCompletedOnboarding, profile, refreshTeam } = useAuth()
+  const { isAuthenticated, userId, hasCompletedOnboarding, profile, refreshTeam } = useAuth()
   const { refresh: refreshMonitoring } = useMonitoring()
   const navigate = useNavigate()
 
@@ -290,6 +290,7 @@ export function OnboardingPage() {
 
     try {
       const result = await teamService.createTeamWithAthletes({
+        userId,
         team: {
           name: teamName.trim(),
           coachName: coachName.trim(),

@@ -13,6 +13,7 @@ import type { TeamProfile, UserProfile } from '../types/monitoring'
 
 interface AuthContextValue {
   isAuthenticated: boolean
+  userId: string | null
   profile: UserProfile
   team: TeamProfile | null
   hasCompletedOnboarding: boolean
@@ -223,6 +224,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthContextValue>(
     () => ({
       isAuthenticated: Boolean(sessionUser),
+      userId: sessionUser,
       profile,
       team,
       hasCompletedOnboarding,
