@@ -2,9 +2,9 @@ import { Navigate, Outlet } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 
 export function OnboardingGuard() {
-  const { isAuthenticated, hasCompletedOnboarding, loading } = useAuth()
+  const { authStatus, onboardingStatus, loading } = useAuth()
 
-  if (loading) {
+  if (loading || authStatus === 'loading' || onboardingStatus === 'loading') {
     return (
       <div className="flex min-h-screen items-center justify-center bg-canvas">
         <div className="text-center">
@@ -15,11 +15,11 @@ export function OnboardingGuard() {
     )
   }
 
-  if (!isAuthenticated) {
+  if (authStatus === 'unauthenticated') {
     return <Navigate to="/signin" replace />
   }
 
-  if (!hasCompletedOnboarding) {
+  if (onboardingStatus === 'incomplete') {
     return <Navigate to="/onboarding" replace />
   }
 

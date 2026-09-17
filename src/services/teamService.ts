@@ -35,15 +35,16 @@ export const teamService = {
       .from('thermo_teams')
       .select('*')
       .eq('user_id', currentUserId)
-      .maybeSingle()
+      .order('created_at', { ascending: false })
+      .limit(1)
 
     if (error) {
       console.error('Error fetching team profile:', error.message)
       return null
     }
 
-    if (!data) return null
-    const row = data as unknown as DbTeamRow
+    if (!data || data.length === 0) return null
+    const row = data[0] as unknown as DbTeamRow
 
     return {
       id: row.id,

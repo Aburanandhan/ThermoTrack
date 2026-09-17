@@ -47,7 +47,7 @@ const STEPS: { id: Step; label: string; number: string }[] = [
 ]
 
 export function OnboardingPage() {
-  const { isAuthenticated, userId, hasCompletedOnboarding, loading, profile, refreshTeam } = useAuth()
+  const { authStatus, onboardingStatus, loading, userId, profile, refreshTeam } = useAuth()
   const { refresh: refreshMonitoring } = useMonitoring()
   const navigate = useNavigate()
 
@@ -99,16 +99,24 @@ export function OnboardingPage() {
   const [formError, setFormError] = useState<string | null>(null)
   const [createdCount, setCreatedCount] = useState(0)
 
-  if (loading) {
-    return null
+  if (loading || authStatus === 'loading' || onboardingStatus === 'loading') {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-canvas">
+        <div className="text-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-teal border-t-transparent mx-auto" />
+          <p className="mt-3 text-xs text-slate-500 font-medium tracking-wide">Loading ThermoTrack...</p>
+        </div>
+      </div>
+    )
   }
 
-  // If user already completed onboarding, redirect to overview
-  if (!isAuthenticated) {
+  // If user is unauthenticated, redirect to signin
+  if (authStatus === 'unauthenticated') {
     return <Navigate to="/signin" replace />
   }
 
-  if (hasCompletedOnboarding && currentStep !== 'complete') {
+  // If user already completed onboarding, redirect to overview
+  if (onboardingStatus === 'complete' && currentStep !== 'complete') {
     return <Navigate to="/" replace />
   }
 

@@ -4,7 +4,7 @@ import { Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
 export function SignInPage() {
-  const { isAuthenticated, hasCompletedOnboarding, loading, signIn, signUp, resetPassword } = useAuth()
+  const { authStatus, onboardingStatus, loading, signIn, signUp, resetPassword } = useAuth()
   const navigate = useNavigate()
   const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>('signin')
   const [name, setName] = useState('')
@@ -15,12 +15,19 @@ export function SignInPage() {
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  if (loading) {
-    return null
+  if (loading || authStatus === 'loading' || (authStatus === 'authenticated' && onboardingStatus === 'loading')) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-canvas">
+        <div className="text-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-teal border-t-transparent mx-auto" />
+          <p className="mt-3 text-xs text-slate-500 font-medium tracking-wide">Loading ThermoTrack...</p>
+        </div>
+      </div>
+    )
   }
 
-  if (isAuthenticated) {
-    return <Navigate to={hasCompletedOnboarding ? '/' : '/onboarding'} replace />
+  if (authStatus === 'authenticated') {
+    return <Navigate to={onboardingStatus === 'complete' ? '/' : '/onboarding'} replace />
   }
 
   const onSubmit = async (event: FormEvent) => {

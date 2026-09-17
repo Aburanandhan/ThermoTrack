@@ -4,14 +4,21 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
+import type { Session } from '@supabase/supabase-js'
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
 import { teamService } from '../services/teamService'
 import type { TeamProfile, UserProfile } from '../types/monitoring'
 
-interface AuthContextValue {
+export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated'
+export type OnboardingStatus = 'loading' | 'complete' | 'incomplete'
+
+export interface AuthContextValue {
+  authStatus: AuthStatus
+  onboardingStatus: OnboardingStatus
   isAuthenticated: boolean
   userId: string | null
   profile: UserProfile
@@ -36,86 +43,109 @@ const emptyProfile: UserProfile = {
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const [authStatus, setAuthStatus] = useState<AuthStatus>('loading')
+  const [onboardingStatus, setOnboardingStatus] = useState<OnboardingStatus>('loading')
   const [sessionUser, setSessionUser] = useState<string | null>(null)
   const [profile, setProfile] = useState<UserProfile>(emptyProfile)
   const [team, setTeam] = useState<TeamProfile | null>(null)
-  const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState<boolean>(false)
-  const [loading, setLoading] = useState(true)
 
-  const loadTeam = useCallback(async (userId: string) => {
-    try {
-      const teamProfile = await teamService.getTeam(userId)
-      if (teamProfile) {
-        setTeam(teamProfile)
-        setHasCompletedOnboarding(teamProfile.onboardingCompleted)
-      } else {
+  const seqRef = useRef(0)
+
+  const resolveAuthState = useCallback(async (session: Session | null) => {
+    const currentSeq = ++seqRef.current
+
+    if (!session?.user) {
+      if (currentSeq === seqRef.current) {
+        setSessionUser(null)
+        setProfile(emptyProfile)
         setTeam(null)
-        setHasCompletedOnboarding(false)
+        setOnboardingStatus('incomplete')
+        setAuthStatus('unauthenticated')
+      }
+      return
+    }
+
+    const user = session.user
+    const userMeta = (user.user_metadata || {}) as Record<string, unknown>
+    const nextProfile: UserProfile = {
+      name: (userMeta.name as string) || (userMeta.full_name as string) || 'Coach',
+      email: user.email || '',
+      organization: (userMeta.organization as string) || (userMeta.team_name as string) || '',
+      role: (userMeta.role as string) || 'Coach',
+    }
+
+    let teamProfile: TeamProfile | null = null
+    let isComplete = false
+
+    try {
+      teamProfile = await teamService.getTeam(user.id)
+      if (teamProfile) {
+        isComplete = Boolean(teamProfile.onboardingCompleted)
+      } else if (userMeta.onboarding_completed === true) {
+        isComplete = true
+      } else {
+        isComplete = false
       }
     } catch (err) {
-      console.error('Error loading team in AuthProvider:', err)
+      console.error('Error fetching team in resolveAuthState:', err)
+      if (userMeta.onboarding_completed === true) {
+        isComplete = true
+      }
+    }
+
+    if (currentSeq === seqRef.current) {
+      setSessionUser(user.id)
+      setProfile(nextProfile)
+      setTeam(teamProfile)
+      setOnboardingStatus(isComplete ? 'complete' : 'incomplete')
+      setAuthStatus('authenticated')
     }
   }, [])
 
   const refreshTeam = useCallback(async () => {
     if (sessionUser) {
-      await loadTeam(sessionUser)
+      try {
+        const teamProfile = await teamService.getTeam(sessionUser)
+        if (teamProfile) {
+          setTeam(teamProfile)
+          const completed = Boolean(teamProfile.onboardingCompleted)
+          setOnboardingStatus(completed ? 'complete' : 'incomplete')
+        }
+      } catch (err) {
+        console.error('Error refreshing team in AuthProvider:', err)
+      }
     }
-  }, [loadTeam, sessionUser])
+  }, [sessionUser])
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
-      setLoading(false)
+      setAuthStatus('unauthenticated')
+      setOnboardingStatus('incomplete')
       return
     }
 
-    // Resolve the restored session and its onboarding state before rendering route decisions.
+    // 1. Initial resolution via getSession
     void (async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession()
-        if (session?.user) {
-          setSessionUser(session.user.id)
-          const userMeta = session.user.user_metadata || {}
-          setProfile({
-            name: (userMeta.name as string) || (userMeta.full_name as string) || 'Coach',
-            email: session.user.email || '',
-            organization: (userMeta.organization as string) || (userMeta.team_name as string) || '',
-            role: (userMeta.role as string) || 'Coach',
-          })
-          await loadTeam(session.user.id)
-        }
+        await resolveAuthState(session)
       } catch (err) {
-        console.error('Error restoring Supabase session:', err)
-      } finally {
-        setLoading(false)
+        console.error('Error in initial getSession:', err)
+        await resolveAuthState(null)
       }
     })()
 
+    // 2. Auth listener for session events
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user) {
-        setSessionUser(session.user.id)
-        const userMeta = session.user.user_metadata || {}
-        setProfile({
-          name: (userMeta.name as string) || (userMeta.full_name as string) || 'Coach',
-          email: session.user.email || '',
-          organization: (userMeta.organization as string) || (userMeta.team_name as string) || '',
-          role: (userMeta.role as string) || 'Coach',
-        })
-        await loadTeam(session.user.id)
-      } else {
-        setSessionUser(null)
-        setProfile(emptyProfile)
-        setTeam(null)
-        setHasCompletedOnboarding(false)
-      }
+      await resolveAuthState(session)
     })
 
     return () => {
       subscription.unsubscribe()
     }
-  }, [loadTeam])
+  }, [resolveAuthState])
 
   const signIn = useCallback(
     async (email: string, password: string): Promise<{ error: string | null; hasCompletedOnboarding?: boolean }> => {
@@ -133,19 +163,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return { error: error.message }
         }
 
-        if (data.user) {
-          setSessionUser(data.user.id)
-          const meta = data.user.user_metadata || {}
-          setProfile({
-            name: (meta.name as string) || 'Coach',
-            email: data.user.email || email,
-            organization: (meta.organization as string) || (meta.team_name as string) || '',
-            role: (meta.role as string) || 'Coach',
-          })
+        if (data.user && data.session) {
+          await resolveAuthState(data.session)
           const teamProfile = await teamService.getTeam(data.user.id)
-          const completed = Boolean(teamProfile?.onboardingCompleted)
-          setTeam(teamProfile)
-          setHasCompletedOnboarding(completed)
+          const meta = (data.user.user_metadata || {}) as Record<string, unknown>
+          const completed = Boolean(teamProfile?.onboardingCompleted || meta.onboarding_completed === true)
           return { error: null, hasCompletedOnboarding: completed }
         }
 
@@ -155,7 +177,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error: msg }
       }
     },
-    [],
+    [resolveAuthState],
   )
 
   const signUp = useCallback(
@@ -175,8 +197,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (error) return { error: error.message }
 
-        if (data.user) {
-          setSessionUser(data.user.id)
+        if (data.user && data.session) {
+          await resolveAuthState(data.session)
         }
 
         return { error: null }
@@ -185,7 +207,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error: msg }
       }
     },
-    [],
+    [resolveAuthState],
   )
 
   const resetPassword = useCallback(async (email: string): Promise<{ error: string | null }> => {
@@ -207,9 +229,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut().catch(() => {})
-    setSessionUser(null)
-    setProfile(emptyProfile)
-  }, [])
+    await resolveAuthState(null)
+  }, [resolveAuthState])
 
   const updateProfile = useCallback(async (patch: Partial<UserProfile>) => {
     setProfile((current) => ({ ...current, ...patch }))
@@ -227,14 +248,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const isLoading = authStatus === 'loading' || (authStatus === 'authenticated' && onboardingStatus === 'loading')
+  const isAuthenticated = authStatus === 'authenticated'
+  const hasCompletedOnboarding = onboardingStatus === 'complete'
+
   const value = useMemo<AuthContextValue>(
     () => ({
-      isAuthenticated: Boolean(sessionUser),
+      authStatus,
+      onboardingStatus,
+      isAuthenticated,
       userId: sessionUser,
       profile,
       team,
       hasCompletedOnboarding,
-      loading,
+      loading: isLoading,
       signIn,
       signUp,
       resetPassword,
@@ -243,11 +270,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       refreshTeam,
     }),
     [
+      authStatus,
+      onboardingStatus,
+      isAuthenticated,
       sessionUser,
       profile,
       team,
       hasCompletedOnboarding,
-      loading,
+      isLoading,
       signIn,
       signUp,
       resetPassword,
@@ -265,3 +295,4 @@ export function useAuth() {
   if (!ctx) throw new Error('useAuth must be used within AuthProvider')
   return ctx
 }
+
