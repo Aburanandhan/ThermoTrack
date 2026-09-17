@@ -1,4 +1,4 @@
-import { Check, Copy, Cpu, FileCode2, Globe, Shield } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, Copy, Cpu, FileCode2, Globe, Shield } from 'lucide-react'
 import { useState } from 'react'
 import { TopHeader } from '../components/layout/TopHeader'
 import { useAppShell } from '../components/layout/useAppShell'
@@ -55,7 +55,6 @@ bool readPhysicalTemperatureSensor(float* outTemperatureC) {
   // if (isnan(temp) || temp < 30.0 || temp > 45.0) return false;
   // *outTemperatureC = temp;
   // return true;
-
   // Returning false until real hardware driver is initialized:
   return false;
 }
@@ -124,6 +123,7 @@ void loop() {
 export function HelpPage() {
   const { openNav } = useAppShell()
   const [copied, setCopied] = useState(false)
+  const [isFirmwareExpanded, setIsFirmwareExpanded] = useState(true)
 
   const copyCode = () => {
     navigator.clipboard.writeText(ESP32_REFERENCE_FIRMWARE).then(() => {
@@ -184,7 +184,11 @@ export function HelpPage() {
 
         {/* ESP32 Firmware Reference Section */}
         <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div
+            className={`flex items-center justify-between ${
+              isFirmwareExpanded ? 'border-b border-slate-100 pb-3' : ''
+            }`}
+          >
             <div className="flex items-center gap-2">
               <FileCode2 className="h-5 w-5 text-teal" />
               <div>
@@ -196,30 +200,49 @@ export function HelpPage() {
                 </p>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={copyCode}
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
-            >
-              {copied ? (
-                <>
-                  <Check className="h-3.5 w-3.5 text-emerald-600" /> Copied
-                </>
-              ) : (
-                <>
-                  <Copy className="h-3.5 w-3.5" /> Copy Code
-                </>
-              )}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsFirmwareExpanded((prev) => !prev)}
+                aria-expanded={isFirmwareExpanded}
+                aria-label={isFirmwareExpanded ? 'Minimize firmware section' : 'Expand firmware section'}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 transition-colors"
+              >
+                {isFirmwareExpanded ? (
+                  <ChevronUp className="h-4 w-4 text-slate-600" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 text-slate-600" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={copyCode}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+              >
+                {copied ? (
+                  <>
+                    <Check className="h-3.5 w-3.5 text-emerald-600" /> Copied
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-3.5 w-3.5" /> Copy Code
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
-          <div className="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs font-mono text-slate-200">
-            <pre>{ESP32_REFERENCE_FIRMWARE}</pre>
-          </div>
-          <p className="mt-2 text-[11px] text-slate-500">
-            * Reference firmware only: Attach the appropriate manufacturer driver for your physical
-            ear temperature probe. Never flash code generating synthetic or randomized numbers.
-          </p>
+          {isFirmwareExpanded && (
+            <>
+              <div className="mt-4 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs font-mono text-slate-200">
+                <pre>{ESP32_REFERENCE_FIRMWARE}</pre>
+              </div>
+              <p className="mt-2 text-[11px] text-slate-500">
+                * Reference firmware only: Attach the appropriate manufacturer driver for your physical
+                ear temperature probe. Never flash code generating synthetic or randomized numbers.
+              </p>
+            </>
+          )}
         </section>
 
         {/* Structured Documentation Accordion */}
