@@ -47,7 +47,7 @@ const STEPS: { id: Step; label: string; number: string }[] = [
 ]
 
 export function OnboardingPage() {
-  const { isAuthenticated, userId, hasCompletedOnboarding, profile, refreshTeam } = useAuth()
+  const { isAuthenticated, userId, hasCompletedOnboarding, loading, profile, refreshTeam } = useAuth()
   const { refresh: refreshMonitoring } = useMonitoring()
   const navigate = useNavigate()
 
@@ -98,6 +98,10 @@ export function OnboardingPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [createdCount, setCreatedCount] = useState(0)
+
+  if (loading) {
+    return null
+  }
 
   // If user already completed onboarding, redirect to overview
   if (!isAuthenticated) {

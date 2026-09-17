@@ -1,7 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppLayout } from './components/layout/AppLayout'
 import { OnboardingGuard } from './components/layout/OnboardingGuard'
-import { RequireAuth } from './components/layout/RequireAuth'
 import { AuthProvider } from './context/AuthContext'
 import { MonitoringProvider } from './context/MonitoringContext'
 import { AthleteDetailPage } from './pages/AthleteDetailPage'
@@ -27,18 +26,16 @@ export default function App() {
 
             <Route path="/onboarding" element={<OnboardingPage />} />
 
-            <Route element={<RequireAuth />}>
-              <Route element={<OnboardingGuard />}>
-                <Route element={<AppLayout />}>
-                  <Route path="/" element={<OverviewPage />} />
-                  <Route path="/overview" element={<Navigate to="/" replace />} />
-                  <Route path="/athletes" element={<AthletesPage />} />
-                  <Route path="/athletes/:athleteId" element={<AthleteDetailPage />} />
-                  <Route path="/session-build" element={<SessionBuildPage />} />
-                  <Route path="/calendar" element={<CalendarPage />} />
-                  <Route path="/help" element={<HelpPage />} />
-                  <Route path="/profile" element={<ProfilePage />} />
-                </Route>
+            <Route element={<OnboardingGuard />}>
+              <Route element={<AppLayout />}>
+                <Route path="/" element={<OverviewPage />} />
+                <Route path="/overview" element={<Navigate to="/" replace />} />
+                <Route path="/athletes" element={<AthletesPage />} />
+                <Route path="/athletes/:athleteId" element={<AthleteDetailPage />} />
+                <Route path="/session-build" element={<SessionBuildPage />} />
+                <Route path="/calendar" element={<CalendarPage />} />
+                <Route path="/help" element={<HelpPage />} />
+                <Route path="/profile" element={<ProfilePage />} />
               </Route>
             </Route>
 

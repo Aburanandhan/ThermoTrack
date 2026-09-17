@@ -69,21 +69,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    // Initial session check from Supabase Auth
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        setSessionUser(session.user.id)
-        const userMeta = session.user.user_metadata || {}
-        setProfile({
-          name: (userMeta.name as string) || (userMeta.full_name as string) || 'Coach',
-          email: session.user.email || '',
-          organization: (userMeta.organization as string) || (userMeta.team_name as string) || '',
-          role: (userMeta.role as string) || 'Coach',
-        })
-        await loadTeam(session.user.id)
+    // Resolve the restored session and its onboarding state before rendering route decisions.
+    void (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.user) {
+          setSessionUser(session.user.id)
+          const userMeta = session.user.user_metadata || {}
+          setProfile({
+            name: (userMeta.name as string) || (userMeta.full_name as string) || 'Coach',
+            email: session.user.email || '',
+            organization: (userMeta.organization as string) || (userMeta.team_name as string) || '',
+            role: (userMeta.role as string) || 'Coach',
+          })
+          await loadTeam(session.user.id)
+        }
+      } catch (err) {
+        console.error('Error restoring Supabase session:', err)
+      } finally {
+        setLoading(false)
       }
-      setLoading(false)
-    })
+    })()
 
     const {
       data: { subscription },

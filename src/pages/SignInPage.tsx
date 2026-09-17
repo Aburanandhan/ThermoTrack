@@ -4,7 +4,7 @@ import { Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
 export function SignInPage() {
-  const { isAuthenticated, hasCompletedOnboarding, signIn, signUp, resetPassword } = useAuth()
+  const { isAuthenticated, hasCompletedOnboarding, loading, signIn, signUp, resetPassword } = useAuth()
   const navigate = useNavigate()
   const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>('signin')
   const [name, setName] = useState('')
@@ -14,6 +14,10 @@ export function SignInPage() {
   const [error, setError] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  if (loading) {
+    return null
+  }
 
   if (isAuthenticated) {
     return <Navigate to={hasCompletedOnboarding ? '/' : '/onboarding'} replace />
