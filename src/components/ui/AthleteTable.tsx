@@ -8,9 +8,10 @@ interface AthleteTableProps {
   readings: TemperatureReading[]
   devices: DeviceStatus[]
   thresholds: TemperatureThresholds
+  onEdit?: (athlete: Athlete) => void
 }
 
-export function AthleteTable({ athletes, readings, devices, thresholds }: AthleteTableProps) {
+export function AthleteTable({ athletes, readings, devices, thresholds, onEdit }: AthleteTableProps) {
   if (athletes.length === 0) {
     return (
       <EmptyState
@@ -36,6 +37,7 @@ export function AthleteTable({ athletes, readings, devices, thresholds }: Athlet
           readings={readings}
           devices={devices}
           thresholds={thresholds}
+          onEdit={onEdit}
         />
       ))}
     </div>

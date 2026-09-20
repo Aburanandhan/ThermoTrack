@@ -59,9 +59,10 @@ export function connectionLabel(state: ConnectionState): string {
 export function latestReadingForAthlete(
   readings: TemperatureReading[],
   athleteId: string,
+  sensorId?: string | null,
 ): TemperatureReading | undefined {
   return readings
-    .filter((reading) => reading.athleteId === athleteId)
+    .filter((reading) => reading.athleteId === athleteId || (sensorId && reading.sensorId === sensorId))
     .sort((a, b) => {
       const aTime = a.timestamp ? Date.parse(a.timestamp) : 0
       const bTime = b.timestamp ? Date.parse(b.timestamp) : 0

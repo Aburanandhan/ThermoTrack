@@ -87,7 +87,7 @@ export const athleteService = {
       name: athlete.name.trim(),
       athlete_code: athlete.athleteCode.trim().toUpperCase(),
       sensor_id: athlete.sensorId?.trim() ? athlete.sensorId.trim().toUpperCase() : null,
-      device_id: athlete.deviceId || null,
+      device_id: athlete.deviceId?.trim() ? athlete.deviceId.trim().toUpperCase() : null,
       team_id: athlete.teamId || null,
       sport: athlete.sport || null,
       category: athlete.category || null,
@@ -109,8 +109,8 @@ export const athleteService = {
       id: athleteId,
       name: athlete.name,
       athleteId: athlete.athleteCode,
-      sensorId: athlete.sensorId || null,
-      deviceId: athlete.deviceId || null,
+      sensorId: athlete.sensorId?.trim() ? athlete.sensorId.trim().toUpperCase() : null,
+      deviceId: athlete.deviceId?.trim() ? athlete.deviceId.trim().toUpperCase() : null,
       teamId: athlete.teamId || null,
       sport: athlete.sport || null,
       category: athlete.category || null,
@@ -141,7 +141,7 @@ export const athleteService = {
         name: a.name.trim(),
         athlete_code: a.athleteCode.trim().toUpperCase(),
         sensor_id: a.sensorId?.trim() ? a.sensorId.trim().toUpperCase() : null,
-        device_id: a.deviceId || null,
+        device_id: a.deviceId?.trim() ? a.deviceId.trim().toUpperCase() : null,
         team_id: a.teamId || null,
         sport: a.sport || null,
         category: a.category || null,
@@ -170,7 +170,7 @@ export const athleteService = {
       name: row.name,
       athleteId: row.athlete_code,
       sensorId: row.sensor_id || null,
-      deviceId: row.device_id,
+      deviceId: row.device_id || null,
       teamId: row.team_id || null,
       sport: row.sport || null,
       category: row.category || null,
@@ -181,6 +181,66 @@ export const athleteService = {
       emergencyContactPhone: row.emergency_contact_phone || null,
       createdAt: row.created_at,
     }))
+  },
+
+  async updateAthlete(athleteId: string, updates: Partial<AthleteInput>): Promise<Athlete> {
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabase is not configured.')
+    }
+
+    const payload: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    }
+
+    if (updates.name !== undefined) payload.name = updates.name.trim()
+    if (updates.athleteCode !== undefined) payload.athlete_code = updates.athleteCode.trim().toUpperCase()
+    if (updates.sport !== undefined) payload.sport = updates.sport?.trim() || null
+    if (updates.category !== undefined) payload.category = updates.category?.trim() || null
+    if (updates.age !== undefined) payload.age = updates.age ?? null
+    if (updates.positionEvent !== undefined) payload.position_event = updates.positionEvent?.trim() || null
+    if (updates.experienceLevel !== undefined) payload.experience_level = updates.experienceLevel?.trim() || null
+    if (updates.emergencyContactName !== undefined) {
+      payload.emergency_contact_name = updates.emergencyContactName?.trim() || null
+    }
+    if (updates.emergencyContactPhone !== undefined) {
+      payload.emergency_contact_phone = updates.emergencyContactPhone?.trim() || null
+    }
+    if (updates.sensorId !== undefined) {
+      payload.sensor_id = updates.sensorId?.trim() ? updates.sensorId.trim().toUpperCase() : null
+    }
+    if (updates.deviceId !== undefined) {
+      payload.device_id = updates.deviceId?.trim() ? updates.deviceId.trim().toUpperCase() : null
+    }
+
+    const { data, error } = await supabase
+      .from('thermo_athletes')
+      .update(payload)
+      .eq('id', athleteId)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Error updating athlete:', error.message)
+      throw error
+    }
+
+    const row = data as unknown as DbAthleteRow
+    return {
+      id: row.id,
+      name: row.name,
+      athleteId: row.athlete_code,
+      sensorId: row.sensor_id || null,
+      deviceId: row.device_id || null,
+      teamId: row.team_id || null,
+      sport: row.sport || null,
+      category: row.category || null,
+      age: row.age ?? null,
+      positionEvent: row.position_event || null,
+      experienceLevel: row.experience_level || null,
+      emergencyContactName: row.emergency_contact_name || null,
+      emergencyContactPhone: row.emergency_contact_phone || null,
+      createdAt: row.created_at,
+    }
   },
 
   async deleteAthlete(athleteId: string): Promise<void> {

@@ -36,6 +36,7 @@ interface MonitoringContextValue {
   refresh: () => Promise<void>
   addSession: (session: TrainingSession) => Promise<void>
   addAthlete: (athlete: AthleteInput) => Promise<Athlete>
+  updateAthlete: (athleteId: string, athlete: Partial<AthleteInput>) => Promise<Athlete>
   dismissAlert: (alertId: string) => Promise<void>
 }
 
@@ -198,12 +199,29 @@ export function MonitoringProvider({ children }: { children: ReactNode }) {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'thermo_athletes' },
         (payload) => {
+          if (payload.eventType === 'DELETE') {
+            const oldRow = payload.old as { id?: string }
+            if (oldRow?.id) {
+              setAthletes((curr) => curr.filter((a) => a.id !== oldRow.id))
+            }
+            return
+          }
+
           const row = payload.new as {
             id: string
             name: string
             athlete_code: string
-            sensor_id: string
+            sensor_id: string | null
             device_id: string | null
+            team_id?: string | null
+            sport?: string | null
+            category?: string | null
+            age?: number | null
+            position_event?: string | null
+            experience_level?: string | null
+            emergency_contact_name?: string | null
+            emergency_contact_phone?: string | null
+            created_at?: string
           }
           if (!row?.id) return
 
@@ -213,12 +231,21 @@ export function MonitoringProvider({ children }: { children: ReactNode }) {
               id: row.id,
               name: row.name,
               athleteId: row.athlete_code,
-              sensorId: row.sensor_id,
-              deviceId: row.device_id,
+              sensorId: row.sensor_id || null,
+              deviceId: row.device_id || null,
+              teamId: row.team_id || null,
+              sport: row.sport || null,
+              category: row.category || null,
+              age: row.age ?? null,
+              positionEvent: row.position_event || null,
+              experienceLevel: row.experience_level || null,
+              emergencyContactName: row.emergency_contact_name || null,
+              emergencyContactPhone: row.emergency_contact_phone || null,
+              createdAt: row.created_at,
             }
             if (index >= 0) {
               const copy = [...curr]
-              copy[index] = item
+              copy[index] = { ...copy[index], ...item }
               return copy
             }
             return [...curr, item]
@@ -278,6 +305,15 @@ export function MonitoringProvider({ children }: { children: ReactNode }) {
     return athlete
   }, [])
 
+  const updateAthlete = useCallback(
+    async (athleteId: string, updates: Partial<AthleteInput>): Promise<Athlete> => {
+      const updated = await athleteService.updateAthlete(athleteId, updates)
+      setAthletes((curr) => curr.map((a) => (a.id === athleteId ? { ...a, ...updated } : a)))
+      return updated
+    },
+    [],
+  )
+
   const dismissAlert = useCallback(async (alertId: string) => {
     setAlerts((curr) => curr.filter((a) => a.id !== alertId))
     await alertService.acknowledgeAlert(alertId).catch((err) => {
@@ -299,6 +335,7 @@ export function MonitoringProvider({ children }: { children: ReactNode }) {
       refresh,
       addSession,
       addAthlete,
+      updateAthlete,
       dismissAlert,
     }),
     [
@@ -314,6 +351,7 @@ export function MonitoringProvider({ children }: { children: ReactNode }) {
       refresh,
       addSession,
       addAthlete,
+      updateAthlete,
       dismissAlert,
     ],
   )

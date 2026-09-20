@@ -6,6 +6,7 @@ import {
   Check,
   CheckCircle2,
   ChevronRight,
+  Cpu,
   Info,
   Plus,
   Radio,
@@ -36,6 +37,7 @@ interface AthleteDraft {
   emergencyContactName: string
   emergencyContactPhone: string
   sensorId: string
+  deviceId: string
 }
 
 const STEPS: { id: Step; label: string; number: string }[] = [
@@ -83,6 +85,7 @@ export function OnboardingPage() {
       emergencyContactName: '',
       emergencyContactPhone: '',
       sensorId: '',
+      deviceId: '',
     }
   }
 
@@ -322,7 +325,7 @@ export function OnboardingPage() {
           emergencyContactName: draft.emergencyContactName.trim() || null,
           emergencyContactPhone: draft.emergencyContactPhone.trim() || null,
           sensorId: draft.sensorId.trim() ? draft.sensorId.trim().toUpperCase() : null,
-          deviceId: null,
+          deviceId: draft.deviceId.trim() ? draft.deviceId.trim().toUpperCase() : null,
         })),
       })
 
@@ -807,9 +810,22 @@ export function OnboardingPage() {
                           </label>
                           <input
                             type="text"
-                            placeholder="Assign later / No sensor"
+                            placeholder="e.g. TEMP-001 (Optional)"
                             value={draft.sensorId}
                             onChange={(e) => handleUpdateAthlete(idx, { sensorId: e.target.value })}
+                            className="mt-1 h-8 w-full rounded-lg border border-slate-200 px-2.5 text-xs font-mono outline-none focus:border-teal"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-medium text-slate-500">
+                            Device ID / Gateway <span className="text-slate-400 font-normal">(Optional)</span>
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="e.g. THERMO-001 (Optional)"
+                            value={draft.deviceId}
+                            onChange={(e) => handleUpdateAthlete(idx, { deviceId: e.target.value })}
                             className="mt-1 h-8 w-full rounded-lg border border-slate-200 px-2.5 text-xs font-mono outline-none focus:border-teal"
                           />
                         </div>
@@ -948,11 +964,17 @@ export function OnboardingPage() {
                           </p>
                         </div>
                       </div>
-                      <div className="text-right">
+                      <div className="flex flex-wrap items-center justify-end gap-1.5 text-right">
                         <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-semibold text-slate-600">
                           <Radio className="h-3 w-3 text-slate-400" />
-                          {athlete.sensorId ? athlete.sensorId : 'Sensor: Not Assigned'}
+                          {athlete.sensorId ? `Sensor: ${athlete.sensorId}` : 'Sensor: Not Assigned'}
                         </span>
+                        {athlete.deviceId ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-semibold text-slate-600">
+                            <Cpu className="h-3 w-3 text-slate-400" />
+                            Device: {athlete.deviceId}
+                          </span>
+                        ) : null}
                       </div>
                     </div>
                   ))}

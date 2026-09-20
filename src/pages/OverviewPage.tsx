@@ -195,13 +195,15 @@ export function OverviewPage() {
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {athletes.map((athlete) => {
-                const reading = latestReadingForAthlete(readings, athlete.id)
+                const reading = latestReadingForAthlete(readings, athlete.id, athlete.sensorId)
                 const device = deviceForAthlete(devices, athlete)
                 const connection = connectionFromDevice(device)
                 const tempStatus = resolveTemperatureStatus(reading?.temperature, thresholds)
 
                 // Calculate simple trend if 2+ readings exist
-                const athleteReadings = readings.filter((r) => r.athleteId === athlete.id)
+                const athleteReadings = readings.filter(
+                  (r) => r.athleteId === athlete.id || (athlete.sensorId && r.sensorId === athlete.sensorId),
+                )
                 const prevReading =
                   athleteReadings.length >= 2
                     ? athleteReadings[athleteReadings.length - 2]
@@ -273,7 +275,7 @@ export function OverviewPage() {
                     </div>
 
                     <div className="mt-3 flex items-center justify-between text-[11px] text-slate-500">
-                      <span>Gateway: {device?.deviceId || 'Waiting for device'}</span>
+                      <span>Gateway: {athlete.deviceId || device?.deviceId || 'Waiting for device'}</span>
                       <span>
                         {reading?.timestamp
                           ? formatTimestamp(reading.timestamp)
