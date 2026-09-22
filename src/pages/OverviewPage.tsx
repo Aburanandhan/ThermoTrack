@@ -23,9 +23,7 @@ import {
   connectionLabel,
   deviceForAthlete,
   latestReadingForAthlete,
-  resolveTemperatureStatus,
 } from '../lib/status'
-import { TemperatureStatus } from '../components/ui/TemperatureStatus'
 
 export function OverviewPage() {
   const { openNav } = useAppShell()
@@ -43,7 +41,7 @@ export function OverviewPage() {
     dismissAlert,
   } = useMonitoring()
 
-  const connectedDevicesCount = devices.filter((d) => d.connected).length
+  const connectedDevicesCount = devices.filter((device) => device.connected).length
 
   return (
     <>
@@ -198,8 +196,6 @@ export function OverviewPage() {
                 const reading = latestReadingForAthlete(readings, athlete.id, athlete.sensorId)
                 const device = deviceForAthlete(devices, athlete)
                 const connection = connectionFromDevice(device)
-                const tempStatus = resolveTemperatureStatus(reading?.temperature, thresholds)
-
                 // Calculate simple trend if 2+ readings exist
                 const athleteReadings = readings.filter(
                   (r) => r.athleteId === athlete.id || (athlete.sensorId && r.sensorId === athlete.sensorId),
@@ -246,7 +242,7 @@ export function OverviewPage() {
                     <div className="mt-4 flex items-baseline justify-between border-t border-slate-100 pt-3">
                       <div>
                         <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                          Estimated Core Temperature
+                          SENSOR TEMPERATURE
                         </p>
                         <div className="mt-0.5 flex items-baseline gap-2">
                           <span className="text-3xl font-semibold tabular-nums tracking-tight text-navy">
@@ -270,7 +266,13 @@ export function OverviewPage() {
                       </div>
 
                       <div>
-                        <TemperatureStatus status={tempStatus} />
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                          {connection === 'connected' && reading?.temperature !== null && reading?.temperature !== undefined
+                            ? 'LIVE / RECEIVING'
+                            : connection === 'disconnected'
+                              ? 'DEVICE DISCONNECTED'
+                              : 'WAITING FOR DATA'}
+                        </span>
                       </div>
                     </div>
 

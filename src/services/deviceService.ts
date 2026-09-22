@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
+import { isDeviceFresh } from '../lib/status'
 import type { DeviceStatus } from '../types/monitoring'
 
 interface DbDeviceRow {
@@ -30,7 +31,8 @@ export const deviceService = {
 
     return ((data || []) as unknown as DbDeviceRow[]).map((row) => ({
       deviceId: row.device_id || row.id,
-      connected: Boolean(row.connected),
+      connected: isDeviceFresh({ lastSeenAt: row.last_seen_at }),
+      lastSeenAt: row.last_seen_at || null,
       lastPacket: row.last_packet || row.last_seen_at || null,
       signalStrength: row.signal_strength !== null ? Number(row.signal_strength) : null,
       battery: row.battery !== null ? Number(row.battery) : null,

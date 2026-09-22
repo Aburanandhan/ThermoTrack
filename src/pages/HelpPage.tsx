@@ -308,7 +308,7 @@ export function HelpPage() {
 
           <AccordionItem title="Understanding Temperature Readings">
             <p className="text-xs leading-relaxed text-slate-600">
-              Readings represent estimated core body temperatures captured from the tympanic ear-probe.
+              Readings represent sensor temperatures captured from the tympanic ear-probe.
               Values are classified into neutral monitoring ranges: <strong>GOOD</strong>,{' '}
               <strong>MONITOR</strong>, or <strong>CAUTION</strong>. These states are configurable
               monitoring thresholds and must not be used as clinical or diagnostic determinations.

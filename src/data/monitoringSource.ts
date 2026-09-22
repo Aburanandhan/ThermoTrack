@@ -5,6 +5,7 @@ import { alertService } from '../services/alertService'
 import { sessionService } from '../services/sessionService'
 import { settingsService } from '../services/settingsService'
 import { DEFAULT_TEMPERATURE_THRESHOLDS } from '../config/thresholds'
+import { isDeviceFresh } from '../lib/status'
 import type { MonitoringSnapshot } from '../types/monitoring'
 
 export async function fetchMonitoringSnapshot(): Promise<MonitoringSnapshot> {
@@ -24,7 +25,7 @@ export async function fetchMonitoringSnapshot(): Promise<MonitoringSnapshot> {
       latestReadingTime &&
       Date.now() - Date.parse(latestReadingTime) < 60 * 1000
     )
-    const anyConnectedDevice = devices.some((d) => d.connected)
+    const anyConnectedDevice = devices.some((device) => isDeviceFresh(device))
 
     return {
       athletes,

@@ -6,6 +6,14 @@ import type {
   TemperatureThresholds,
 } from '../types/monitoring'
 
+export const DEVICE_FRESHNESS_THRESHOLD_MS = 15 * 1000
+
+export function isDeviceFresh(device: Pick<DeviceStatus, 'lastSeenAt'>, now = Date.now()): boolean {
+  if (!device.lastSeenAt) return false
+  const lastSeen = Date.parse(device.lastSeenAt)
+  return Number.isFinite(lastSeen) && now - lastSeen < DEVICE_FRESHNESS_THRESHOLD_MS
+}
+
 export function resolveTemperatureStatus(
   temperature: number | null | undefined,
   thresholds: TemperatureThresholds,
@@ -42,7 +50,7 @@ export function temperatureStatusLabel(status: TemperatureStatusKey): string {
 
 export function connectionFromDevice(device: DeviceStatus | undefined): ConnectionState {
   if (!device) return 'waiting'
-  return device.connected ? 'connected' : 'disconnected'
+  return isDeviceFresh(device) ? 'connected' : 'disconnected'
 }
 
 export function connectionLabel(state: ConnectionState): string {

@@ -227,7 +227,7 @@ export function AthleteDetailPage() {
           <Metric
             label="Current Temperature"
             value={formatTemperature(reading?.temperature)}
-            subtitle="Estimated core body temperature"
+            subtitle="Sensor temperature"
           />
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
@@ -280,11 +280,11 @@ export function AthleteDetailPage() {
                   {formatTemperature(reading?.temperature)}
                 </span>
                 <span className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                  {reading?.temperature !== null && reading?.temperature !== undefined
-                    ? 'Actual Hardware Telemetry'
-                    : connection === 'connected'
-                      ? 'WAITING FOR FIRST READING'
-                      : 'SENSOR DISCONNECTED'}
+                  {connection === 'connected' && reading?.temperature !== null && reading?.temperature !== undefined
+                    ? 'LIVE / RECEIVING'
+                    : connection === 'disconnected'
+                      ? 'DEVICE DISCONNECTED'
+                      : 'WAITING FOR FIRST READING'}
                 </span>
               </div>
             </div>

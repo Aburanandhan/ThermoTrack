@@ -13,6 +13,7 @@ import { sessionService } from '../services/sessionService'
 import { alertService } from '../services/alertService'
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
 import { DEFAULT_TEMPERATURE_THRESHOLDS } from '../config/thresholds'
+import { isDeviceFresh } from '../lib/status'
 import type {
   Athlete,
   DataStreamStatus,
@@ -81,6 +82,27 @@ export function MonitoringProvider({ children }: { children: ReactNode }) {
     void refresh()
   }, [refresh])
 
+  useEffect(() => {
+    const checkDeviceFreshness = () => {
+      setDevices((current) =>
+        current.map((device) => ({
+          ...device,
+          connected: isDeviceFresh(device),
+        })),
+      )
+    }
+
+    const timer = window.setInterval(checkDeviceFreshness, 5 * 1000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  useEffect(() => {
+    setStream((current) => ({
+      ...current,
+      connected: devices.some((device) => isDeviceFresh(device)),
+    }))
+  }, [devices])
+
   // Realtime Supabase Channel subscriptions - Real Hardware Telemetry Only
   useEffect(() => {
     if (!isSupabaseConfigured) return
@@ -115,10 +137,7 @@ export function MonitoringProvider({ children }: { children: ReactNode }) {
           }
 
           setReadings((curr) => [...curr.slice(-499), newReading])
-          setStream({
-            connected: true,
-            lastUpdate: rawTime,
-          })
+          setStream((current) => ({ ...current, lastUpdate: rawTime }))
         },
       )
       .on(
@@ -128,7 +147,7 @@ export function MonitoringProvider({ children }: { children: ReactNode }) {
           const row = payload.new as {
             id?: string
             device_id?: string
-            connected: boolean
+            connected?: boolean
             last_packet?: string | null
             last_seen_at?: string | null
             signal_strength: number | null
@@ -142,7 +161,8 @@ export function MonitoringProvider({ children }: { children: ReactNode }) {
             const index = curr.findIndex((d) => d.deviceId === devId)
             const item: DeviceStatus = {
               deviceId: devId,
-              connected: Boolean(row.connected),
+              connected: isDeviceFresh({ lastSeenAt: row.last_seen_at }),
+              lastSeenAt: row.last_seen_at || null,
               lastPacket: row.last_packet || row.last_seen_at || null,
               signalStrength: row.signal_strength !== null ? Number(row.signal_strength) : null,
               battery: row.battery !== null ? Number(row.battery) : null,

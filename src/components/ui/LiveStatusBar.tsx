@@ -17,15 +17,15 @@ export function LiveStatusBar({ devices, stream }: LiveStatusBarProps) {
       <StatusCell label="Live Monitoring">
         <span
           className={`text-sm font-semibold inline-flex items-center gap-1.5 ${
-            stream.connected ? 'text-emerald-700' : 'text-slate-500'
+            connected ? 'text-emerald-700' : 'text-slate-500'
           }`}
         >
           <span
             className={`h-2 w-2 rounded-full ${
-              stream.connected ? 'bg-emerald-500 animate-pulse' : 'border border-slate-400'
+              connected ? 'bg-emerald-500 animate-pulse' : 'border border-slate-400'
             }`}
           />
-          {stream.connected ? 'LIVE MONITORING' : 'WAITING FOR DEVICES'}
+          {connected ? 'LIVE MONITORING' : 'WAITING FOR DEVICES'}
         </span>
       </StatusCell>
       <StatusCell label="ESP32 Connection">
@@ -35,7 +35,7 @@ export function LiveStatusBar({ devices, stream }: LiveStatusBarProps) {
         </p>
       </StatusCell>
       <StatusCell label="Data Stream">
-        <p className="text-sm font-medium text-slate-700">{stream.connected ? 'Receiving' : 'No data'}</p>
+        <p className="text-sm font-medium text-slate-700">{connected ? 'Receiving' : 'No data'}</p>
       </StatusCell>
       <StatusCell label="Last Update">
         <p className="text-sm font-medium tabular-nums text-slate-700">{formatTimestamp(stream.lastUpdate)}</p>

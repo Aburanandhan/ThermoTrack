@@ -61,6 +61,7 @@ export interface TemperatureReading {
 export interface DeviceStatus {
   deviceId: string
   connected: boolean
+  lastSeenAt: string | null
   lastPacket: string | null
   signalStrength?: number | null
   battery?: number | null
