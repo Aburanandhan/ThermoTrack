@@ -5,77 +5,111 @@ import { useAppShell } from '../components/layout/useAppShell'
 import { AccordionItem } from '../components/ui/Accordion'
 
 const ESP32_REFERENCE_FIRMWARE = `/*
- * ThermoTrack ESP32 Hardware Integration Firmware (Reference Template)
+ * ThermoTrack ESP8266 / ESP32 Hardware Integration Firmware (Reference Template)
  *
  * NOTE: This reference firmware separates:
- * 1. ESP32 Communication Layer (Wi-Fi)
- * 2. Physical Sensor Driver Layer (Attach your sensor driver: e.g. I2C, SPI, or OneWire)
- * 3. Telemetry Transmission Layer (Supabase PostgREST HTTPS Ingestion)
+ * 1. Communication Layer (Wi-Fi + Supabase REST PostgREST)
+ * 2. Sensor Driver Layer (Attach your sensor driver: e.g. DHT11, I2C, SPI, or OneWire)
+ * 3. Heartbeat & Telemetry Transmission (Upsert to thermo_devices and insert to thermo_readings)
  *
- * DO NOT use synthetic or random values in production.
+ * NOTE: The ESP does NOT generate timestamps. Supabase PostgreSQL NOW() is the source of truth.
+ * Current DHT11 data is labeled "Sensor Temperature".
  */
 
-#include <WiFi.h>
-#include <HTTPClient.h>
+#if defined(ESP8266)
+  #include <ESP8266WiFi.h>
+  #include <ESP8266HTTPClient.h>
+  #include <WiFiClientSecure.h>
+#elif defined(ESP32)
+  #include <WiFi.h>
+  #include <HTTPClient.h>
+  #include <WiFiClientSecure.h>
+#endif
 #include <ArduinoJson.h>
 
 // ----------------------------------------------------
-// 1. ESP32 Communication Layer Configuration
+// 1. Wi-Fi & Supabase Configuration
 // ----------------------------------------------------
 const char* WIFI_SSID = "YOUR_WIFI_SSID";
 const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 
-// Supabase REST endpoint URL and API Key
-// Table: thermo_readings
-const char* SUPABASE_REST_URL = "https://YOUR_PROJECT_REF.supabase.co/rest/v1/thermo_readings";
-const char* SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
+// Supabase REST endpoints & Anon API Key
+const char* SUPABASE_HEARTBEAT_URL = "https://YOUR_PROJECT_REF.supabase.co/rest/v1/thermo_devices?on_conflict=id";
+const char* SUPABASE_READINGS_URL  = "https://YOUR_PROJECT_REF.supabase.co/rest/v1/thermo_readings";
+const char* SUPABASE_ANON_KEY      = "YOUR_SUPABASE_ANON_KEY";
 
 // Device & Sensor Identification
-const char* ATHLETE_ID = "ath_01";          // Associated athlete code in thermo_athletes
-const char* SENSOR_ID  = "EAR-SN-401";      // Physical wearable in-ear sensor probe serial
+const char* DEVICE_ID  = "THERMO-001";     // Gateway / Microcontroller ID
+const char* SENSOR_ID  = "TEMP-001";       // Temperature Sensor ID
+const char* ATHLETE_ID = "TEMP-001";       // Associated Athlete Code (or athlete ID)
+
+unsigned long lastHeartbeatTime = 0;
+const unsigned long HEARTBEAT_INTERVAL_MS = 5000; // Heartbeat every ~5 seconds
 
 // ----------------------------------------------------
 // 2. Sensor Driver Layer (Hardware Specific)
 // ----------------------------------------------------
-// Include the library for your verified sensor model:
-// Example sensors:
-// - MLX90614 (Infrared tympanic)
-// - TMP117   (High precision medical grade digital sensor)
-// - MAX30205 (Clinical body temperature)
-//
-// Replace this function with actual sensor reading calls:
 bool readPhysicalTemperatureSensor(float* outTemperatureC) {
-  // [SENSOR DRIVER INTEGRATION]:
-  // 1. Query physical sensor over I2C/SPI
-  // 2. Read raw registers and convert to Celsius
-  // 3. Perform sanity and range checks (e.g. 32.0C <= temp <= 43.0C)
-  //
-  // Example stub:
-  // float temp = sensor.readObjectTempC();
-  // if (isnan(temp) || temp < 30.0 || temp > 45.0) return false;
+  // Replace with actual sensor reading calls (e.g. DHT11, MLX90614, TMP117):
+  // float temp = dht.readTemperature();
+  // if (isnan(temp)) return false;
   // *outTemperatureC = temp;
   // return true;
-  // Returning false until real hardware driver is initialized:
   return false;
 }
 
 // ----------------------------------------------------
-// 3. Telemetry Transmission Layer
+// 3. Heartbeat Transmission (UPSERT to thermo_devices)
+// ----------------------------------------------------
+bool sendHeartbeat() {
+  if (WiFi.status() != WL_CONNECTED) return false;
+
+  WiFiClientSecure client;
+  client.setInsecure(); // For HTTPS connection on microcontrollers
+
+  HTTPClient http;
+  http.begin(client, SUPABASE_HEARTBEAT_URL);
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("apikey", SUPABASE_ANON_KEY);
+  http.addHeader("Authorization", String("Bearer ") + SUPABASE_ANON_KEY);
+  http.addHeader("Prefer", "resolution=merge-duplicates"); // Upsert resolution
+
+  StaticJsonDocument<256> doc;
+  doc["id"]              = DEVICE_ID;
+  doc["device_id"]       = DEVICE_ID;
+  doc["sensor_id"]       = SENSOR_ID;
+  doc["connected"]       = true;
+  doc["signal_strength"] = WiFi.RSSI();
+
+  String payload;
+  serializeJson(doc, payload);
+
+  int httpCode = http.POST(payload);
+  http.end();
+
+  return (httpCode >= 200 && httpCode < 300);
+}
+
+// ----------------------------------------------------
+// 4. Telemetry Transmission (INSERT to thermo_readings)
 // ----------------------------------------------------
 bool transmitTelemetry(float temperatureC) {
   if (WiFi.status() != WL_CONNECTED) return false;
 
+  WiFiClientSecure client;
+  client.setInsecure();
+
   HTTPClient http;
-  http.begin(SUPABASE_REST_URL);
+  http.begin(client, SUPABASE_READINGS_URL);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("apikey", SUPABASE_ANON_KEY);
   http.addHeader("Authorization", String("Bearer ") + SUPABASE_ANON_KEY);
   http.addHeader("Prefer", "return=minimal");
 
-  // Construct JSON payload matching thermo_readings schema
   StaticJsonDocument<256> doc;
   doc["athlete_id"]  = ATHLETE_ID;
   doc["sensor_id"]   = SENSOR_ID;
+  doc["device_id"]   = DEVICE_ID;
   doc["temperature"] = temperatureC;
 
   String payload;
@@ -89,9 +123,7 @@ bool transmitTelemetry(float temperatureC) {
 
 void setup() {
   Serial.begin(115200);
-  Serial.println("[ThermoTrack] Initializing ESP32 Gateway...");
-
-  // Initialize hardware sensor bus here (e.g. Wire.begin(SDA_PIN, SCL_PIN))
+  Serial.println("[ThermoTrack] Initializing Gateway...");
 
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   while (WiFi.status() != WL_CONNECTED) {
@@ -99,25 +131,34 @@ void setup() {
     Serial.print(".");
   }
   Serial.println("\\n[ThermoTrack] Wi-Fi Connected. IP: " + WiFi.localIP().toString());
+
+  // Send initial heartbeat immediately
+  sendHeartbeat();
 }
 
 void loop() {
-  float temperature = 0.0;
+  unsigned long currentMillis = millis();
 
-  // Read validated physical sensor
-  if (readPhysicalTemperatureSensor(&temperature)) {
-    Serial.printf("[Sensor] Valid core reading: %.2f C\\n", temperature);
-    bool sent = transmitTelemetry(temperature);
-    if (sent) {
-      Serial.println("[Telemetry] Ingested into Supabase successfully.");
+  // 1. Periodic Heartbeat (~5 seconds)
+  if (currentMillis - lastHeartbeatTime >= HEARTBEAT_INTERVAL_MS) {
+    lastHeartbeatTime = currentMillis;
+    if (sendHeartbeat()) {
+      Serial.println("[Heartbeat] Heartbeat acknowledged by Supabase.");
     } else {
-      Serial.println("[Telemetry] Transmission failed. Retrying next cycle.");
+      Serial.println("[Heartbeat] Failed to send heartbeat ping.");
     }
-  } else {
-    Serial.println("[Sensor] Sensor unattached or awaiting valid thermal reading.");
   }
 
-  delay(4000); // Sample every 4 seconds
+  // 2. Physical Sensor Telemetry Measurement
+  float temperature = 0.0;
+  if (readPhysicalTemperatureSensor(&temperature)) {
+    Serial.printf("[Sensor] Valid sensor temperature: %.2f C\\n", temperature);
+    if (transmitTelemetry(temperature)) {
+      Serial.println("[Telemetry] Ingested into Supabase successfully.");
+    }
+  }
+
+  delay(1000);
 }`
 
 export function HelpPage() {

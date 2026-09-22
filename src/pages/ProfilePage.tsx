@@ -95,7 +95,7 @@ export function ProfilePage() {
                 defaultChecked
                 className="rounded border-slate-300 text-teal focus:ring-teal"
               />
-              Audible ping alert on rapid core temperature rise (&gt;0.5°C in 5m)
+              Audible ping alert on rapid temperature rise (&gt;0.5°C in 5m)
             </label>
           </Section>
 

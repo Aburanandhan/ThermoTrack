@@ -92,7 +92,7 @@ export function MonitoringProvider({ children }: { children: ReactNode }) {
       )
     }
 
-    const timer = window.setInterval(checkDeviceFreshness, 5 * 1000)
+    const timer = window.setInterval(checkDeviceFreshness, 1000)
     return () => window.clearInterval(timer)
   }, [])
 

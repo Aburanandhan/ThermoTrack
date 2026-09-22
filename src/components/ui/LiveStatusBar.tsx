@@ -28,10 +28,10 @@ export function LiveStatusBar({ devices, stream }: LiveStatusBarProps) {
           {connected ? 'LIVE MONITORING' : 'WAITING FOR DEVICES'}
         </span>
       </StatusCell>
-      <StatusCell label="ESP32 Connection">
+      <StatusCell label="Gateway Connection">
         <ConnectionStatus state={connectionState} compact />
         <p className="text-xs text-slate-500">
-          {connected ? 'Device connected' : 'Waiting for device'}
+          {connected ? 'Device connected' : connectionState === 'disconnected' ? 'Device disconnected' : 'Waiting for device'}
         </p>
       </StatusCell>
       <StatusCell label="Data Stream">

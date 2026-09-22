@@ -91,7 +91,7 @@ export function SignInPage() {
         <div className="relative z-10 max-w-md">
           <p className="text-sm font-bold tracking-[0.28em] text-teal">THERMOTRACK</p>
           <h1 className="mt-6 text-3xl font-semibold leading-tight sm:text-4xl">
-            Real-time core temperature intelligence for elite athletes.
+            Real-time sensor temperature intelligence for elite athletes.
           </h1>
           <p className="mt-4 text-sm leading-6 text-white/70">
             Monitor real telemetry from wearable ear-sensors and ESP32 gateway devices during high-intensity training.

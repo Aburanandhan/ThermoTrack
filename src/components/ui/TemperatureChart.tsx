@@ -47,7 +47,7 @@ export function TemperatureChart({ readings, range, onRangeChange }: Temperature
     <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3">
         <div>
-          <h3 className="text-sm font-semibold text-navy">Core Temperature Progression</h3>
+          <h3 className="text-sm font-semibold text-navy">Sensor Temperature Progression</h3>
           {stats ? (
             <p className="mt-0.5 text-xs text-slate-500">
               Min: <span className="font-semibold text-navy">{stats.min}°C</span> · Avg:{' '}
