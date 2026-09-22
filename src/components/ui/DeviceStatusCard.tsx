@@ -1,5 +1,5 @@
 import { formatOptional, formatTimestamp } from '../../lib/format'
-import { connectionLabel } from '../../lib/status'
+import { connectionFromDevice, connectionLabel } from '../../lib/status'
 import type { DeviceStatus } from '../../types/monitoring'
 import { ConnectionStatus } from './ConnectionStatus'
 
@@ -18,8 +18,7 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 export function DeviceStatusCard({ device, sensorId }: DeviceStatusCardProps) {
-  const connected = device?.connected ?? false
-  const state = device ? (connected ? 'connected' : 'disconnected') : 'waiting'
+  const state = connectionFromDevice(device)
 
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">

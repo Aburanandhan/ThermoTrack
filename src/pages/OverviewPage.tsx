@@ -22,6 +22,7 @@ import {
   connectionFromDevice,
   connectionLabel,
   deviceForAthlete,
+  isDeviceFresh,
   latestReadingForAthlete,
 } from '../lib/status'
 
@@ -40,7 +41,7 @@ export function OverviewPage() {
     dismissAlert,
   } = useMonitoring()
 
-  const connectedDevicesCount = devices.filter((device) => device.connected).length
+  const connectedDevicesCount = devices.filter((device) => isDeviceFresh(device)).length
 
   return (
     <>
@@ -311,31 +312,45 @@ export function OverviewPage() {
               </div>
             ) : (
               <div className="mt-3 divide-y divide-slate-100">
-                {devices.map((device) => (
-                  <div key={device.deviceId} className="flex items-center justify-between py-2.5">
-                    <div className="flex items-center gap-3">
-                      <span
-                        className={`h-2.5 w-2.5 rounded-full ${
-                          device.connected ? 'bg-emerald-500' : 'bg-slate-300'
-                        }`}
-                      />
-                      <div>
-                        <p className="text-xs font-semibold text-navy">{device.deviceId}</p>
-                        <p className="text-[11px] text-slate-400">
-                          Sensor: {device.sensorId || 'Assigned dynamically'}
-                        </p>
+                {devices.map((device) => {
+                  const isConnected = isDeviceFresh(device)
+                  return (
+                    <div key={device.deviceId} className="flex items-center justify-between py-2.5">
+                      <div className="flex items-center gap-3">
+                        <span
+                          className={`h-2.5 w-2.5 rounded-full ${
+                            isConnected ? 'bg-emerald-500' : 'bg-slate-300'
+                          }`}
+                        />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs font-semibold text-navy">{device.deviceId}</p>
+                            <span
+                              className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
+                                isConnected
+                                  ? 'bg-emerald-50 text-emerald-700'
+                                  : 'bg-slate-100 text-slate-600'
+                              }`}
+                            >
+                              {isConnected ? 'CONNECTED' : 'DISCONNECTED'}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-400">
+                            Sensor: {device.sensorId || 'Assigned dynamically'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4 text-xs text-slate-600">
+                        <span>
+                          {device.signalStrength !== null ? `${device.signalStrength} dBm` : '--'}
+                        </span>
+                        <span className="rounded bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
+                          {device.battery !== null ? `${device.battery}%` : 'Not available'}
+                        </span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-4 text-xs text-slate-600">
-                      <span>
-                        {device.signalStrength !== null ? `${device.signalStrength} dBm` : '--'}
-                      </span>
-                      <span className="rounded bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
-                        {device.battery !== null ? `${device.battery}%` : 'Not available'}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </section>

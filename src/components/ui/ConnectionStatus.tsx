@@ -19,18 +19,18 @@ export function ConnectionStatus({
       <span
         aria-hidden="true"
         className={cn(
-          'inline-block rounded-full border',
-          compact ? 'h-2.5 w-2.5' : 'h-3 w-3',
-          state === 'connected' && 'border-teal bg-teal',
-          state === 'disconnected' && 'border-slate-400 bg-white',
-          state === 'waiting' && 'border-slate-300 bg-transparent',
+          'inline-block rounded-full',
+          compact ? 'h-2 w-2' : 'h-2.5 w-2.5',
+          state === 'connected' && 'bg-emerald-500',
+          state === 'disconnected' && 'bg-slate-300',
+          state === 'waiting' && 'border border-slate-300 bg-transparent',
         )}
       />
       {showLabel ? (
         <span
           className={cn(
-            'font-medium',
-            state === 'connected' && 'text-teal-dark',
+            'font-semibold',
+            state === 'connected' && 'text-emerald-700',
             state === 'disconnected' && 'text-slate-500',
             state === 'waiting' && 'text-slate-400',
           )}

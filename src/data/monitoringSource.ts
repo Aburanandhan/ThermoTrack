@@ -19,12 +19,7 @@ export async function fetchMonitoringSnapshot(): Promise<MonitoringSnapshot> {
       settingsService.getThresholds(),
     ])
 
-    // Data freshness calculation: only active if readings arrived within last 60 seconds or a device reported active
     const latestReadingTime = readings.length > 0 ? readings[readings.length - 1].timestamp : null
-    const hasRecentReading = Boolean(
-      latestReadingTime &&
-      Date.now() - Date.parse(latestReadingTime) < 60 * 1000
-    )
     const anyConnectedDevice = devices.some((device) => isDeviceFresh(device))
 
     return {
@@ -34,7 +29,7 @@ export async function fetchMonitoringSnapshot(): Promise<MonitoringSnapshot> {
       alerts,
       sessions,
       stream: {
-        connected: anyConnectedDevice || hasRecentReading,
+        connected: anyConnectedDevice,
         lastUpdate: latestReadingTime,
       },
       thresholds,

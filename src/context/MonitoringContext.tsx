@@ -84,23 +84,36 @@ export function MonitoringProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const checkDeviceFreshness = () => {
-      setDevices((current) =>
-        current.map((device) => ({
-          ...device,
-          connected: isDeviceFresh(device),
-        })),
-      )
+      setDevices((current) => {
+        let changed = false
+        const updated = current.map((device) => {
+          const fresh = isDeviceFresh(device)
+          if (device.connected !== fresh) {
+            changed = true
+            return {
+              ...device,
+              connected: fresh,
+            }
+          }
+          return device
+        })
+        return changed ? updated : current
+      })
     }
 
-    const timer = window.setInterval(checkDeviceFreshness, 1000)
+    const timer = window.setInterval(checkDeviceFreshness, 2000)
     return () => window.clearInterval(timer)
   }, [])
 
   useEffect(() => {
-    setStream((current) => ({
-      ...current,
-      connected: devices.some((device) => isDeviceFresh(device)),
-    }))
+    setStream((current) => {
+      const isAnyFresh = devices.some((device) => isDeviceFresh(device))
+      if (current.connected === isAnyFresh) return current
+      return {
+        ...current,
+        connected: isAnyFresh,
+      }
+    })
   }, [devices])
 
   // Realtime Supabase Channel subscriptions - Real Hardware Telemetry Only
@@ -157,8 +170,13 @@ export function MonitoringProvider({ children }: { children: ReactNode }) {
           const devId = row.device_id || row.id
           if (!devId) return
 
+          const normDevId = devId.trim().toUpperCase()
           setDevices((curr) => {
-            const index = curr.findIndex((d) => d.deviceId === devId)
+            const index = curr.findIndex(
+              (d) =>
+                d.deviceId.trim().toUpperCase() === normDevId ||
+                (row.id && d.deviceId.trim().toUpperCase() === row.id.trim().toUpperCase()),
+            )
             const item: DeviceStatus = {
               deviceId: devId,
               connected: isDeviceFresh({ lastSeenAt: row.last_seen_at ?? null }),

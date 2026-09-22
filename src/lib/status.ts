@@ -8,10 +8,20 @@ import type {
 
 export const DEVICE_FRESHNESS_THRESHOLD_MS = 15 * 1000
 
-export function isDeviceFresh(device: Pick<DeviceStatus, 'lastSeenAt'>, now = Date.now()): boolean {
-  if (!device.lastSeenAt) return false
-  const lastSeen = Date.parse(device.lastSeenAt)
-  return Number.isFinite(lastSeen) && now - lastSeen < DEVICE_FRESHNESS_THRESHOLD_MS
+export function isDeviceFresh(
+  device: Pick<DeviceStatus, 'lastSeenAt'> | { last_seen_at?: string | null; lastSeenAt?: string | null } | undefined | null,
+  now = Date.now(),
+): boolean {
+  if (!device) return false
+  const rawTimestamp =
+    ('lastSeenAt' in device ? device.lastSeenAt : undefined) ??
+    ('last_seen_at' in device ? device.last_seen_at : undefined)
+  if (!rawTimestamp) return false
+  const lastSeenMs = new Date(rawTimestamp).getTime()
+  if (!Number.isFinite(lastSeenMs) || Number.isNaN(lastSeenMs)) return false
+  const ageMs = now - lastSeenMs
+  // Fresh if within 15 seconds. Tolerate up to 60s of future clock skew.
+  return ageMs >= -60_000 && ageMs < DEVICE_FRESHNESS_THRESHOLD_MS
 }
 
 export function resolveTemperatureStatus(
@@ -69,11 +79,16 @@ export function latestReadingForAthlete(
   athleteId: string,
   sensorId?: string | null,
 ): TemperatureReading | undefined {
+  const normSensorId = sensorId?.trim().toUpperCase()
   return readings
-    .filter((reading) => reading.athleteId === athleteId || (sensorId && reading.sensorId === sensorId))
+    .filter((reading) => {
+      if (reading.athleteId === athleteId) return true
+      if (normSensorId && reading.sensorId?.trim().toUpperCase() === normSensorId) return true
+      return false
+    })
     .sort((a, b) => {
-      const aTime = a.timestamp ? Date.parse(a.timestamp) : 0
-      const bTime = b.timestamp ? Date.parse(b.timestamp) : 0
+      const aTime = a.timestamp ? new Date(a.timestamp).getTime() : 0
+      const bTime = b.timestamp ? new Date(b.timestamp).getTime() : 0
       return bTime - aTime
     })[0]
 }
@@ -83,11 +98,18 @@ export function deviceForAthlete(
   athlete: { deviceId?: string | null; sensorId?: string | null },
 ): DeviceStatus | undefined {
   if (athlete.deviceId) {
-    const byId = devices.find((device) => device.deviceId === athlete.deviceId)
+    const targetDeviceId = athlete.deviceId.trim().toUpperCase()
+    const byId = devices.find(
+      (device) => device.deviceId.trim().toUpperCase() === targetDeviceId,
+    )
     if (byId) return byId
   }
   if (athlete.sensorId) {
-    return devices.find((device) => device.sensorId === athlete.sensorId)
+    const targetSensorId = athlete.sensorId.trim().toUpperCase()
+    const bySensor = devices.find(
+      (device) => device.sensorId && device.sensorId.trim().toUpperCase() === targetSensorId,
+    )
+    if (bySensor) return bySensor
   }
   return undefined
 }
