@@ -66,7 +66,28 @@ export function MonitoringProvider({ children }: { children: ReactNode }) {
       const snapshot = await fetchMonitoringSnapshot()
       setAthletes(snapshot.athletes)
       setReadings(snapshot.readings)
-      setDevices(snapshot.devices)
+      setDevices((current) => {
+        if (current.length === 0) return snapshot.devices
+        // Merge snapshot devices safely preserving any newer lastSeenAt from realtime
+        return snapshot.devices.map((snapDev) => {
+          const existing = current.find(
+            (c) => c.deviceId.trim().toUpperCase() === snapDev.deviceId.trim().toUpperCase(),
+          )
+          if (existing?.lastSeenAt && snapDev.lastSeenAt) {
+            const existMs = new Date(existing.lastSeenAt).getTime()
+            const snapMs = new Date(snapDev.lastSeenAt).getTime()
+            if (Number.isFinite(existMs) && Number.isFinite(snapMs) && existMs > snapMs) {
+              return {
+                ...snapDev,
+                lastSeenAt: existing.lastSeenAt,
+                lastPacket: existing.lastPacket ?? snapDev.lastPacket,
+                connected: isDeviceFresh(existing),
+              }
+            }
+          }
+          return snapDev
+        })
+      })
       setAlerts(snapshot.alerts)
       setSessions(snapshot.sessions)
       setStream(snapshot.stream)
@@ -177,11 +198,25 @@ export function MonitoringProvider({ children }: { children: ReactNode }) {
                 d.deviceId.trim().toUpperCase() === normDevId ||
                 (row.id && d.deviceId.trim().toUpperCase() === row.id.trim().toUpperCase()),
             )
+
+            // Race-condition check: if incoming event has older last_seen_at than our current state, keep the newer timestamp
+            let effectiveLastSeenAt = row.last_seen_at || null
+            let effectiveLastPacket = row.last_packet ?? row.last_seen_at ?? null
+
+            if (index >= 0 && curr[index].lastSeenAt && row.last_seen_at) {
+              const currentMs = new Date(curr[index].lastSeenAt!).getTime()
+              const incomingMs = new Date(row.last_seen_at).getTime()
+              if (Number.isFinite(currentMs) && Number.isFinite(incomingMs) && incomingMs < currentMs) {
+                effectiveLastSeenAt = curr[index].lastSeenAt
+                effectiveLastPacket = curr[index].lastPacket ?? effectiveLastSeenAt
+              }
+            }
+
             const item: DeviceStatus = {
               deviceId: devId,
-              connected: isDeviceFresh({ lastSeenAt: row.last_seen_at ?? null }),
-              lastSeenAt: row.last_seen_at || null,
-              lastPacket: row.last_packet ?? row.last_seen_at ?? null,
+              connected: isDeviceFresh({ lastSeenAt: effectiveLastSeenAt }),
+              lastSeenAt: effectiveLastSeenAt,
+              lastPacket: effectiveLastPacket,
               signalStrength: row.signal_strength !== null ? Number(row.signal_strength) : null,
               battery: row.battery !== null ? Number(row.battery) : null,
               sensorId: row.sensor_id,

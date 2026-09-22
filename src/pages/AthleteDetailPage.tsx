@@ -273,7 +273,9 @@ export function AthleteDetailPage() {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-baseline sm:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                Live Sensor Measurement
+                {connection === 'connected'
+                  ? 'Live Sensor Measurement'
+                  : 'Last Received Sensor Temperature (Not Live)'}
               </p>
               <div className="mt-2 flex items-baseline gap-3">
                 <span className="text-5xl font-semibold tabular-nums tracking-tight text-navy">

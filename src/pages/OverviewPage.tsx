@@ -242,7 +242,9 @@ export function OverviewPage() {
                     <div className="mt-4 flex items-baseline justify-between border-t border-slate-100 pt-3">
                       <div>
                         <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                          SENSOR TEMPERATURE
+                          {connection === 'connected'
+                            ? 'LIVE SENSOR TEMPERATURE'
+                            : 'LAST RECEIVED SENSOR TEMPERATURE'}
                         </p>
                         <div className="mt-0.5 flex items-baseline gap-2">
                           <span className="text-3xl font-semibold tabular-nums tracking-tight text-navy">

@@ -10,6 +10,7 @@ import {
 import { NavLink } from 'react-router-dom'
 import { useMonitoring } from '../../context/MonitoringContext'
 import { cn } from '../../lib/cn'
+import { isDeviceFresh } from '../../lib/status'
 import { ConnectionStatus } from '../ui/ConnectionStatus'
 
 const primary = [
@@ -26,7 +27,7 @@ const secondary = [
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const { devices } = useMonitoring()
-  const connected = devices.some((d) => d.connected)
+  const connected = devices.some((d) => isDeviceFresh(d))
   const state = connected ? 'connected' : devices.length ? 'disconnected' : 'waiting'
 
   return (
@@ -64,7 +65,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           <ConnectionStatus state={state} compact />
         </div>
         <p className="mt-1 text-xs text-slate-500">
-          {connected ? 'Hardware linked' : 'Waiting for devices'}
+          {connected ? 'Hardware linked' : state === 'disconnected' ? 'Device disconnected' : 'Waiting for devices'}
         </p>
       </div>
     </aside>

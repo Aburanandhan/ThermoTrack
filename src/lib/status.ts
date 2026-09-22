@@ -6,7 +6,8 @@ import type {
   TemperatureThresholds,
 } from '../types/monitoring'
 
-export const DEVICE_FRESHNESS_THRESHOLD_MS = 15 * 1000
+export const CONNECTION_TIMEOUT_MS = 30 * 1000
+export const DEVICE_FRESHNESS_THRESHOLD_MS = CONNECTION_TIMEOUT_MS
 
 export function isDeviceFresh(
   device: Pick<DeviceStatus, 'lastSeenAt'> | { last_seen_at?: string | null; lastSeenAt?: string | null } | undefined | null,
@@ -20,8 +21,8 @@ export function isDeviceFresh(
   const lastSeenMs = new Date(rawTimestamp).getTime()
   if (!Number.isFinite(lastSeenMs) || Number.isNaN(lastSeenMs)) return false
   const ageMs = now - lastSeenMs
-  // Fresh if within 15 seconds. Tolerate up to 60s of future clock skew.
-  return ageMs >= -60_000 && ageMs < DEVICE_FRESHNESS_THRESHOLD_MS
+  // Connected if current time - last_seen_at <= 30 seconds (tolerating slight future clock skew up to 60s)
+  return ageMs >= -60_000 && ageMs <= CONNECTION_TIMEOUT_MS
 }
 
 export function resolveTemperatureStatus(
