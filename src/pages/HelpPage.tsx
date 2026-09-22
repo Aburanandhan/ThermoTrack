@@ -34,7 +34,7 @@ const char* WIFI_SSID = "YOUR_WIFI_SSID";
 const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 
 // Supabase REST endpoints & Anon API Key
-const char* SUPABASE_HEARTBEAT_URL = "https://YOUR_PROJECT_REF.supabase.co/rest/v1/thermo_devices?on_conflict=id";
+const char* SUPABASE_HEARTBEAT_BASE_URL = "https://YOUR_PROJECT_REF.supabase.co/rest/v1/thermo_devices";
 const char* SUPABASE_READINGS_URL  = "https://YOUR_PROJECT_REF.supabase.co/rest/v1/thermo_readings";
 const char* SUPABASE_ANON_KEY      = "YOUR_SUPABASE_ANON_KEY";
 
@@ -59,20 +59,68 @@ bool readPhysicalTemperatureSensor(float* outTemperatureC) {
 }
 
 // ----------------------------------------------------
-// 3. Heartbeat Transmission (UPSERT to thermo_devices)
+// 3. Heartbeat Transmission (PATCH to thermo_devices)
+//
+// Uses HTTP PATCH ?id=eq.DEVICE_ID to UPDATE the existing row.
+// PATCH cannot cause a 409 duplicate-key error.
+//
+// If the device row does not exist yet, run a one-time INSERT first
+// (see setup() below), then every subsequent heartbeat uses PATCH.
 // ----------------------------------------------------
+String buildHeartbeatUrl() {
+  // PATCH to the row matching id = DEVICE_ID
+  return String(SUPABASE_HEARTBEAT_BASE_URL) + "?id=eq." + DEVICE_ID;
+}
+
 bool sendHeartbeat() {
   if (WiFi.status() != WL_CONNECTED) return false;
 
   WiFiClientSecure client;
-  client.setInsecure(); // For HTTPS connection on microcontrollers
+  client.setInsecure(); // Accept self-signed / no CA validation on microcontrollers
 
   HTTPClient http;
-  http.begin(client, SUPABASE_HEARTBEAT_URL);
+  http.begin(client, buildHeartbeatUrl());
   http.addHeader("Content-Type", "application/json");
   http.addHeader("apikey", SUPABASE_ANON_KEY);
   http.addHeader("Authorization", String("Bearer ") + SUPABASE_ANON_KEY);
-  http.addHeader("Prefer", "resolution=merge-duplicates"); // Upsert resolution
+  http.addHeader("Prefer", "return=minimal");
+
+  // Only update the fields that change each heartbeat.
+  // last_seen_at and last_packet are set by the database trigger (NOW()).
+  // Do NOT send a timestamp from the ESP clock.
+  StaticJsonDocument<128> doc;
+  doc["connected"]       = true;
+  doc["signal_strength"] = WiFi.RSSI();
+
+  String payload;
+  serializeJson(doc, payload);
+
+  Serial.println("[Heartbeat] Sending: " + payload);
+  int httpCode = http.PATCH(payload);
+  Serial.printf("[Heartbeat] HTTP %d\\n", httpCode);
+  http.end();
+
+  return (httpCode >= 200 && httpCode < 300);
+}
+
+// One-time registration: INSERT the device row when it does not exist yet.
+// Called once at startup before the heartbeat loop begins.
+// Subsequent heartbeats use PATCH (see sendHeartbeat above).
+bool registerDevice() {
+  if (WiFi.status() != WL_CONNECTED) return false;
+
+  WiFiClientSecure client;
+  client.setInsecure();
+
+  // UPSERT endpoint: POST with ?on_conflict=id + Prefer: resolution=merge-duplicates
+  String upsertUrl = String(SUPABASE_HEARTBEAT_BASE_URL) + "?on_conflict=id";
+
+  HTTPClient http;
+  http.begin(client, upsertUrl);
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("apikey", SUPABASE_ANON_KEY);
+  http.addHeader("Authorization", String("Bearer ") + SUPABASE_ANON_KEY);
+  http.addHeader("Prefer", "resolution=merge-duplicates,return=minimal");
 
   StaticJsonDocument<256> doc;
   doc["id"]              = DEVICE_ID;
@@ -84,7 +132,9 @@ bool sendHeartbeat() {
   String payload;
   serializeJson(doc, payload);
 
+  Serial.println("[Register] Upserting device row: " + payload);
   int httpCode = http.POST(payload);
+  Serial.printf("[Register] HTTP %d\\n", httpCode);
   http.end();
 
   return (httpCode >= 200 && httpCode < 300);
@@ -132,8 +182,10 @@ void setup() {
   }
   Serial.println("\\n[ThermoTrack] Wi-Fi Connected. IP: " + WiFi.localIP().toString());
 
-  // Send initial heartbeat immediately
-  sendHeartbeat();
+  // Register (upsert) device row on startup — this handles
+  // both first-boot (INSERT) and reconnect (UPDATE) safely.
+  registerDevice();
+  lastHeartbeatTime = millis(); // Start heartbeat timer after registration.
 }
 
 void loop() {
