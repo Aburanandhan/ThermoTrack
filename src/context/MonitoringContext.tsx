@@ -161,9 +161,9 @@ export function MonitoringProvider({ children }: { children: ReactNode }) {
             const index = curr.findIndex((d) => d.deviceId === devId)
             const item: DeviceStatus = {
               deviceId: devId,
-              connected: isDeviceFresh({ lastSeenAt: row.last_seen_at }),
+              connected: isDeviceFresh({ lastSeenAt: row.last_seen_at ?? null }),
               lastSeenAt: row.last_seen_at || null,
-              lastPacket: row.last_packet || row.last_seen_at || null,
+              lastPacket: row.last_packet ?? row.last_seen_at ?? null,
               signalStrength: row.signal_strength !== null ? Number(row.signal_strength) : null,
               battery: row.battery !== null ? Number(row.battery) : null,
               sensorId: row.sensor_id,

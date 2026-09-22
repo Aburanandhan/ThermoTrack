@@ -34,7 +34,6 @@ export function OverviewPage() {
     alerts,
     sessions,
     stream,
-    thresholds,
     loading,
     error,
     refresh,
