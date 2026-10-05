@@ -124,13 +124,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    // 1. Initial resolution via getSession
+    // 1. Initial resolution via getUser & getSession
     void (async () => {
       try {
+        const { data: { user }, error: userErr } = await supabase.auth.getUser()
+        if (userErr || !user) {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (session) {
+            // Stale local token for deleted/invalid user -> purge session
+            await supabase.auth.signOut().catch(() => {})
+          }
+          await resolveAuthState(null)
+          return
+        }
         const { data: { session } } = await supabase.auth.getSession()
         await resolveAuthState(session)
       } catch (err) {
-        console.error('Error in initial getSession:', err)
+        console.error('Error in initial auth resolution:', err)
         await resolveAuthState(null)
       }
     })()

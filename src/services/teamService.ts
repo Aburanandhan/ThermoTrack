@@ -94,29 +94,13 @@ export const teamService = {
       throw new Error('Supabase is not configured.')
     }
 
-    // 1. Resolve current user ID from payload, getSession, or getUser
-    let activeUserId = payload.userId
-    if (!activeUserId) {
-      const { data: sessionData, error: sessionErr } = await supabase.auth.getSession()
-      if (sessionData?.session?.user?.id) {
-        activeUserId = sessionData.session.user.id
-      } else if (sessionErr) {
-        console.warn('getSession warning in createTeamWithAthletes:', sessionErr.message)
-      }
-    }
+    // 1. Resolve current verified user ID directly from Supabase Auth server
+    const { data: authData, error: authErr } = await supabase.auth.getUser()
+    const activeUserId = authData?.user?.id
 
-    if (!activeUserId) {
-      const { data: authData, error: authErr } = await supabase.auth.getUser()
-      if (authData?.user?.id) {
-        activeUserId = authData.user.id
-      } else if (authErr) {
-        console.error('getUser error in createTeamWithAthletes:', authErr.message)
-        throw new Error(`Authentication error: ${authErr.message}`)
-      }
-    }
-
-    if (!activeUserId) {
-      throw new Error('Authenticated coach session required to create a team. Please verify that you are signed in.')
+    if (authErr || !activeUserId) {
+      console.error('getUser error in createTeamWithAthletes:', authErr?.message)
+      throw new Error(`Authenticated coach session required to create a team. Please verify that you are signed in.`)
     }
 
     // 2. Reuse existing team ID if one already exists for this coach to prevent duplicate teams
@@ -161,9 +145,17 @@ export const teamService = {
       updatedAt: createdTeamRow.updated_at,
     }
 
-    // 4. Insert athletes in batch
+    // 4. Insert athletes in batch (clean up any previous onboarding roster for this team to avoid unique constraint collisions)
     let createdAthletes: Athlete[] = []
     if (payload.athletes.length > 0) {
+      if (existingTeam) {
+        await supabase
+          .from('thermo_athletes')
+          .delete()
+          .eq('team_id', createdTeam.id)
+          .eq('user_id', activeUserId)
+      }
+
       const athleteRecords = payload.athletes.map((ath, index) => ({
         id: `ath_${Date.now()}_${index + 1}`,
         teamId: createdTeam.id,
