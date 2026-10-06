@@ -400,9 +400,17 @@ export function OverviewPage() {
                             </div>
 
                             <div className="mt-2.5 flex items-center justify-between text-xs">
-                              <span className="text-slate-500">Confidence:</span>
+                              <span className="text-slate-500">
+                                {isAttentionRequired
+                                  ? 'Safety Event Confidence:'
+                                  : 'Tracking Confidence:'}
+                              </span>
                               <span className="font-semibold font-mono text-navy">
-                                {isWaitingForPlayer ? '--' : `${safety.confidence}%`}
+                                {isWaitingForPlayer
+                                  ? '--'
+                                  : isAttentionRequired
+                                    ? `${safety.safetyConfidence || safety.confidence}%`
+                                    : `${safety.trackingConfidence || safety.confidence}%`}
                               </span>
                             </div>
 

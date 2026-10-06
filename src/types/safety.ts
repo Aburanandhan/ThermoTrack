@@ -13,6 +13,13 @@ export type AbnormalEventType =
   | 'possible_fall'
   | 'visibility_issue'
 
+export type SafetyEventState =
+  | 'MONITORING'
+  | 'CANDIDATE'
+  | 'OBSERVING'
+  | 'CONFIRMED'
+  | 'COOLDOWN'
+
 export interface PoseLandmarkPoint {
   x: number
   y: number
@@ -26,20 +33,28 @@ export interface SafetyDiagnostics {
   verticalAcceleration: number
   movementScore: number
   impactScore: number
+  verticalDropScore: number
   postEventStillness: number
   abnormalityScore: number
-  temporalConfirmation: 'CONFIRMED' | 'OBSERVING' | 'NO'
+  eventState: SafetyEventState
+  cooldownRemainingSec: number
+  trackingConfidence: number
+  safetyEventConfidence: number
   rawEventCandidate?: AbnormalEventType | null
 }
 
 export interface PlayerSafetyAssessment {
   status: SafetyStatus
-  confidence: number // 0 to 100 percentage
+  trackingConfidence: number // 0 to 100 percentage
+  safetyConfidence: number // 0 to 100 percentage
+  confidence: number // general coach display percentage
   message: string
   eventType?: AbnormalEventType | null
+  eventId?: string | null
   timestamp: number
   isPoseDetected: boolean
   trackingQuality: number // 0 to 100 percentage
+  isNewConfirmedEvent?: boolean // true ONLY on the exact frame an event is confirmed
   diagnostics?: SafetyDiagnostics
 }
 
@@ -50,6 +65,8 @@ export interface SafetyDetectionEvent {
   safetyStatus: SafetyStatus
   eventType: AbnormalEventType
   message: string
+  trackingConfidence: number
+  safetyConfidence: number
   confidence: number
   detectedAt: string
 }
@@ -58,9 +75,10 @@ export interface AthleteSafetySummary {
   athleteId: string
   status: SafetyStatus
   confidence: number
+  trackingConfidence?: number
+  safetyConfidence?: number
   message: string
   eventType?: AbnormalEventType | null
   lastUpdate: string
   isMonitoringActive: boolean
 }
-

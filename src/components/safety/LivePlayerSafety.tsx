@@ -41,9 +41,12 @@ export function LivePlayerSafety({ athlete, className }: LivePlayerSafetyProps) 
 
   const [assessment, setAssessment] = useState<PlayerSafetyAssessment>({
     status: 'SAFE',
+    trackingConfidence: 0,
+    safetyConfidence: 0,
     confidence: 0,
     message: 'Camera is off',
     eventType: null,
+    eventId: null,
     timestamp: 0,
     isPoseDetected: false,
     trackingQuality: 0,
@@ -106,12 +109,16 @@ export function LivePlayerSafety({ athlete, className }: LivePlayerSafetyProps) 
     setFps(0)
     const stoppedAssessment: PlayerSafetyAssessment = {
       status: 'WAITING_FOR_PLAYER',
+      trackingConfidence: 0,
+      safetyConfidence: 0,
       confidence: 0,
       message: 'Camera is off',
       eventType: null,
+      eventId: null,
       timestamp: 0,
       isPoseDetected: false,
       trackingQuality: 0,
+      isNewConfirmedEvent: false,
     }
     setAssessment(stoppedAssessment)
     updateAthleteSafety(athlete.id, stoppedAssessment, false)
@@ -174,35 +181,43 @@ export function LivePlayerSafety({ athlete, className }: LivePlayerSafetyProps) 
           updateAthleteSafety(athlete.id, currentAssessment, true)
         }
 
-        // If newly detected attention required event with specific event type, log to history
+        // If newly detected confirmed safety event, log to history with deduplication guard
         if (
-          currentAssessment.status === 'ATTENTION_REQUIRED' &&
+          currentAssessment.isNewConfirmedEvent &&
           currentAssessment.eventType &&
           currentAssessment.eventType !== 'visibility_issue'
         ) {
           const nowIso = new Date().toISOString()
+          const eventId = currentAssessment.eventId || `evt-${Date.now()}`
+
           setEventHistory((prev) => {
+            // Guard against duplicate event IDs
+            if (prev.some((e) => e.id === eventId)) {
+              return prev
+            }
+
+            // Guard against duplicate events within the 8s cooldown window
             const lastEvt = prev[0]
-            // Throttle duplicate event logging within 5s
             if (
               lastEvt &&
-              lastEvt.eventType === currentAssessment.eventType &&
-              Date.now() - new Date(lastEvt.detectedAt).getTime() < 5000
+              Date.now() - new Date(lastEvt.detectedAt).getTime() < PlayerSafetyDetector.EVENT_COOLDOWN_MS
             ) {
               return prev
             }
 
             const newEvt: SafetyDetectionEvent = {
-              id: `evt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+              id: eventId,
               athleteId: athlete.id,
               athleteName: athlete.name,
               safetyStatus: 'ATTENTION_REQUIRED',
               eventType: currentAssessment.eventType!,
               message: currentAssessment.message,
-              confidence: currentAssessment.confidence,
+              trackingConfidence: currentAssessment.trackingConfidence,
+              safetyConfidence: currentAssessment.safetyConfidence,
+              confidence: currentAssessment.safetyConfidence || currentAssessment.confidence,
               detectedAt: nowIso,
             }
-            return [newEvt, ...prev.slice(0, 9)]
+            return [newEvt, ...prev.slice(0, 19)]
           })
         }
       }
@@ -297,9 +312,13 @@ export function LivePlayerSafety({ athlete, className }: LivePlayerSafetyProps) 
     setAssessment((prev) => ({
       ...prev,
       status: 'SAFE',
+      trackingConfidence: 94,
+      safetyConfidence: 0,
       confidence: 94,
-      message: 'Monitoring normally',
+      message: 'Normal movement detected',
       eventType: null,
+      eventId: null,
+      isNewConfirmedEvent: false,
     }))
   }
 
@@ -615,30 +634,54 @@ export function LivePlayerSafety({ athlete, className }: LivePlayerSafetyProps) 
                 )}
               </div>
 
-              {/* Algorithmic Confidence */}
-              <div className="mt-4 pt-3 border-t border-slate-200/60">
+              {/* Algorithmic Confidence & Metrics */}
+              <div className="mt-4 pt-3 border-t border-slate-200/60 space-y-2">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="font-medium text-slate-600">Detection Confidence</span>
+                  <span className="font-medium text-slate-600">Tracking Confidence</span>
                   <span className="font-semibold font-mono text-navy">
-                    {isCameraActive && !isWaitingForPlayer ? `${assessment.confidence}%` : '--'}
+                    {isCameraActive && !isWaitingForPlayer
+                      ? `${assessment.trackingConfidence || assessment.trackingQuality}%`
+                      : '--'}
                   </span>
                 </div>
-                {/* Progress Bar */}
-                <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-200/80">
+                {/* Progress Bar for Tracking */}
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200/80">
                   <div
                     className={cn(
                       'h-full transition-all duration-300',
                       !isCameraActive || isWaitingForPlayer
                         ? 'bg-slate-300 w-0'
-                        : isAttentionRequired
-                          ? 'bg-red-500'
-                          : 'bg-emerald-500',
+                        : 'bg-teal',
                     )}
                     style={{
-                      width: `${isCameraActive && !isWaitingForPlayer ? assessment.confidence : 0}%`,
+                      width: `${
+                        isCameraActive && !isWaitingForPlayer
+                          ? assessment.trackingConfidence || assessment.trackingQuality
+                          : 0
+                      }%`,
                     }}
                   />
                 </div>
+
+                {isAttentionRequired ? (
+                  <div className="pt-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-medium text-red-700">Safety Event Confidence</span>
+                      <span className="font-semibold font-mono text-red-600">
+                        {assessment.safetyConfidence}%
+                      </span>
+                    </div>
+                    {/* Progress Bar for Safety Event */}
+                    <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-red-100">
+                      <div
+                        className="h-full bg-red-600 transition-all duration-300"
+                        style={{
+                          width: `${assessment.safetyConfidence}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
               {/* Supporting Coach Message */}
@@ -667,7 +710,7 @@ export function LivePlayerSafety({ athlete, className }: LivePlayerSafetyProps) 
                     <button
                       type="button"
                       onClick={handleResetAlert}
-                      className="inline-flex items-center gap-1 rounded bg-red-100 px-2 py-1 text-[10px] font-semibold text-red-700 hover:bg-red-200"
+                      className="inline-flex items-center gap-1 rounded bg-red-100 px-2 py-1 text-[10px] font-semibold text-red-700 hover:bg-red-200 cursor-pointer"
                     >
                       <RotateCcw className="h-3 w-3" />
                       Reset Alert
@@ -704,15 +747,17 @@ export function LivePlayerSafety({ athlete, className }: LivePlayerSafetyProps) 
                   </dd>
                 </div>
                 <div className="flex justify-between py-1.5">
-                  <dt className="text-slate-500">Tracking Quality</dt>
+                  <dt className="text-slate-500">Tracking Confidence</dt>
                   <dd className="font-semibold text-navy">
-                    {isCameraActive ? `${assessment.trackingQuality}%` : '--'}
+                    {isCameraActive
+                      ? `${assessment.trackingConfidence || assessment.trackingQuality}%`
+                      : '--'}
                   </dd>
                 </div>
                 <div className="flex justify-between py-1.5">
                   <dt className="text-slate-500">Temporal Analysis</dt>
                   <dd className="font-semibold text-navy">
-                    {isCameraActive ? 'Rolling 2.8s Window' : 'Standby'}
+                    {isCameraActive ? 'Rolling 3.0s State Machine' : 'Standby'}
                   </dd>
                 </div>
                 <div className="flex justify-between py-1.5">
@@ -749,74 +794,92 @@ export function LivePlayerSafety({ athlete, className }: LivePlayerSafetyProps) 
 
           {showDiagnostics ? (
             <div className="mt-3 pt-3 border-t border-slate-200 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-[11px]">
+              {/* 1. Tracking Confidence */}
               <div className="rounded-lg bg-white p-2.5 border border-slate-200 shadow-2xs">
-                <span className="text-slate-500">Tracking Quality</span>
+                <span className="text-slate-500">Tracking Confidence</span>
                 <p className="mt-1 font-mono font-semibold text-navy">
-                  {assessment.trackingQuality}%
+                  {assessment.diagnostics?.trackingConfidence ?? assessment.trackingConfidence ?? 0}%
                 </p>
               </div>
+
+              {/* 2. Safety Event Confidence */}
               <div className="rounded-lg bg-white p-2.5 border border-slate-200 shadow-2xs">
-                <span className="text-slate-500">Body Scale (Torso)</span>
+                <span className="text-slate-500">Safety Event Confidence</span>
                 <p className="mt-1 font-mono font-semibold text-navy">
-                  {assessment.diagnostics?.bodyScale ?? '--'}
+                  {assessment.diagnostics?.safetyEventConfidence ?? assessment.safetyConfidence ?? 0}%
                 </p>
               </div>
+
+              {/* 3. Abnormality Score */}
               <div className="rounded-lg bg-white p-2.5 border border-slate-200 shadow-2xs">
-                <span className="text-slate-500">Vertical Velocity</span>
-                <p className="mt-1 font-mono font-semibold text-navy">
-                  {assessment.diagnostics?.verticalVelocity ?? 0} scale/s
+                <span className="text-slate-500">Abnormality Score</span>
+                <p
+                  className={cn(
+                    'mt-1 font-mono font-semibold',
+                    (assessment.diagnostics?.abnormalityScore ?? 0) >= 50
+                      ? 'text-red-600'
+                      : 'text-navy',
+                  )}
+                >
+                  {assessment.diagnostics?.abnormalityScore ?? 0} / 100
                 </p>
               </div>
-              <div className="rounded-lg bg-white p-2.5 border border-slate-200 shadow-2xs">
-                <span className="text-slate-500">Vertical Acceleration</span>
-                <p className="mt-1 font-mono font-semibold text-navy">
-                  {assessment.diagnostics?.verticalAcceleration ?? 0} scale/s²
-                </p>
-              </div>
-              <div className="rounded-lg bg-white p-2.5 border border-slate-200 shadow-2xs">
-                <span className="text-slate-500">Movement Score</span>
-                <p className="mt-1 font-mono font-semibold text-navy">
-                  {assessment.diagnostics?.movementScore ?? 0}
-                </p>
-              </div>
+
+              {/* 4. Impact Score */}
               <div className="rounded-lg bg-white p-2.5 border border-slate-200 shadow-2xs">
                 <span className="text-slate-500">Impact Score</span>
                 <p className="mt-1 font-mono font-semibold text-navy">
                   {assessment.diagnostics?.impactScore ?? 0} / 25
                 </p>
               </div>
+
+              {/* 5. Vertical Drop Score */}
+              <div className="rounded-lg bg-white p-2.5 border border-slate-200 shadow-2xs">
+                <span className="text-slate-500">Vertical Drop Score</span>
+                <p className="mt-1 font-mono font-semibold text-navy">
+                  {assessment.diagnostics?.verticalDropScore ?? 0} / 25
+                </p>
+              </div>
+
+              {/* 6. Post-Event Stillness */}
               <div className="rounded-lg bg-white p-2.5 border border-slate-200 shadow-2xs">
                 <span className="text-slate-500">Post-Event Stillness</span>
                 <p className="mt-1 font-mono font-semibold text-navy">
                   {assessment.diagnostics?.postEventStillness ?? 0} / 20
                 </p>
               </div>
+
+              {/* 7. Event State */}
               <div className="rounded-lg bg-white p-2.5 border border-slate-200 shadow-2xs">
-                <span className="text-slate-500">Abnormality Score</span>
+                <span className="text-slate-500">Event State</span>
                 <div className="mt-1 flex items-center justify-between">
-                  <p
-                    className={cn(
-                      'font-mono font-semibold',
-                      (assessment.diagnostics?.abnormalityScore ?? 0) >= 50
-                        ? 'text-red-600'
-                        : 'text-emerald-600',
-                    )}
-                  >
-                    {assessment.diagnostics?.abnormalityScore ?? 0} / 100
-                  </p>
                   <span
                     className={cn(
-                      'rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase',
-                      assessment.diagnostics?.temporalConfirmation === 'CONFIRMED'
+                      'rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider',
+                      assessment.diagnostics?.eventState === 'CONFIRMED'
                         ? 'bg-red-100 text-red-700'
-                        : assessment.diagnostics?.temporalConfirmation === 'OBSERVING'
-                          ? 'bg-amber-100 text-amber-700'
-                          : 'bg-emerald-50 text-emerald-700',
+                        : assessment.diagnostics?.eventState === 'OBSERVING'
+                          ? 'bg-amber-100 text-amber-800'
+                          : assessment.diagnostics?.eventState === 'CANDIDATE'
+                            ? 'bg-amber-50 text-amber-700'
+                            : assessment.diagnostics?.eventState === 'COOLDOWN'
+                              ? 'bg-blue-100 text-blue-700'
+                              : 'bg-emerald-50 text-emerald-700',
                     )}
                   >
-                    {assessment.diagnostics?.temporalConfirmation ?? 'NO'}
+                    {assessment.diagnostics?.eventState ?? 'MONITORING'}
                   </span>
                 </div>
+              </div>
+
+              {/* 8. Cooldown Remaining */}
+              <div className="rounded-lg bg-white p-2.5 border border-slate-200 shadow-2xs">
+                <span className="text-slate-500">Cooldown Remaining</span>
+                <p className="mt-1 font-mono font-semibold text-navy">
+                  {assessment.diagnostics?.cooldownRemainingSec
+                    ? `${assessment.diagnostics.cooldownRemainingSec}s`
+                    : '0s'}
+                </p>
               </div>
             </div>
           ) : null}
@@ -832,24 +895,39 @@ export function LivePlayerSafety({ athlete, className }: LivePlayerSafetyProps) 
               <button
                 type="button"
                 onClick={() => setEventHistory([])}
-                className="text-[11px] text-slate-400 hover:text-slate-600"
+                className="text-[11px] text-slate-400 hover:text-slate-600 cursor-pointer"
               >
                 Clear Log
               </button>
             </div>
-            <div className="mt-2 space-y-1.5 max-h-32 overflow-y-auto pr-1 text-xs">
+            <div className="mt-2.5 space-y-2 max-h-48 overflow-y-auto pr-1 text-xs">
               {eventHistory.map((evt) => (
                 <div
                   key={evt.id}
-                  className="flex items-center justify-between rounded bg-white px-3 py-1.5 border border-slate-200 text-xs shadow-2xs"
+                  className="rounded-lg bg-white p-3 border border-slate-200 text-xs shadow-2xs space-y-1.5"
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-red-500" />
-                    <span className="font-medium text-slate-800">{evt.message}</span>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 shrink-0 rounded-full bg-red-500 animate-pulse" />
+                      <span className="font-semibold text-slate-800">{evt.message}</span>
+                    </div>
+                    <span className="text-slate-400 text-[11px] font-mono shrink-0">
+                      {new Date(evt.detectedAt).toLocaleTimeString()}
+                    </span>
                   </div>
-                  <div className="flex items-center gap-3 text-slate-400 text-[11px] font-mono">
-                    <span>Conf: {evt.confidence}%</span>
-                    <span>{new Date(evt.detectedAt).toLocaleTimeString()}</span>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500 pt-1 border-t border-slate-100">
+                    <span>
+                      Tracking Confidence:{' '}
+                      <span className="font-mono font-semibold text-navy">
+                        {evt.trackingConfidence}%
+                      </span>
+                    </span>
+                    <span>
+                      Safety Event Confidence:{' '}
+                      <span className="font-mono font-semibold text-red-600">
+                        {evt.safetyConfidence}%
+                      </span>
+                    </span>
                   </div>
                 </div>
               ))}

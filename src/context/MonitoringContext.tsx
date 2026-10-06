@@ -416,6 +416,8 @@ export function MonitoringProvider({ children }: { children: ReactNode }) {
           athleteId,
           status: assessment.status,
           confidence: assessment.confidence,
+          trackingConfidence: assessment.trackingConfidence,
+          safetyConfidence: assessment.safetyConfidence,
           message: assessment.message,
           eventType: assessment.eventType,
           lastUpdate: new Date().toISOString(),

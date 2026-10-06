@@ -3,6 +3,7 @@ import type {
   PlayerSafetyAssessment,
   PoseLandmarkPoint,
   SafetyDiagnostics,
+  SafetyEventState,
 } from '../../types/safety'
 
 interface FrameLandmarkData {
@@ -18,31 +19,45 @@ interface FrameLandmarkData {
   visibility: number
 }
 
-interface CandidateEvent {
-  timestamp: number
+interface ActiveCandidate {
+  id: string
+  startTimestamp: number
   eventType: AbnormalEventType
   peakScore: number
   initialY: number
 }
 
+interface ConfirmedAlertRecord {
+  id: string
+  timestamp: number
+  eventType: AbnormalEventType
+  message: string
+  safetyConfidence: number
+}
+
 export class PlayerSafetyDetector {
+  // Configuration Constants
+  public static readonly EVENT_COOLDOWN_MS = 8000 // 8 second cooldown to prevent duplicate events
+  public static readonly ALERT_HOLD_DURATION_MS = 4000 // Display ATTENTION state for at least 4s
+  public static readonly ROLLING_HISTORY_DURATION_MS = 3000 // 3.0 second temporal buffer
+  public static readonly CANDIDATE_OBSERVE_MIN_MS = 600 // Minimum post-event observation time (0.6s)
+  public static readonly CANDIDATE_OBSERVE_MAX_MS = 1800 // Maximum post-event observation window (1.8s)
+
   private history: FrameLandmarkData[] = []
-  private maxHistoryDurationMs = 3000 // 3.0 second rolling window
   private isCameraActive = false
 
-  // Smoothed internal coordinates to suppress jitter
+  // Smoothed internal coordinates to suppress landmark micro-jitter
   private prevSmoothedCenter: { x: number; y: number } | null = null
   private prevSmoothedScale = 0.35
   private lastPoseSeenTimestamp = 0
 
-  // Two-stage temporal confirmation state machine
-  private candidateEvent: CandidateEvent | null = null
-  private confirmedAlertTimestamp = 0
-  private confirmedAlertReason: { message: string; eventType: AbnormalEventType; confidence: number } | null = null
-  private alertHoldDurationMs = 3500 // Hold ATTENTION state for 3.5s minimum
+  // Explicit State Machine: MONITORING -> CANDIDATE -> OBSERVING -> CONFIRMED -> COOLDOWN
+  private currentState: SafetyEventState = 'MONITORING'
+  private activeCandidate: ActiveCandidate | null = null
+  private lastConfirmedAlert: ConfirmedAlertRecord | null = null
 
-  // Smoothed confidence
-  private smoothedConfidence = 94
+  // Smoothed tracking confidence
+  private smoothedTrackingConfidence = 94
 
   public setCameraActive(active: boolean) {
     this.isCameraActive = active
@@ -56,10 +71,10 @@ export class PlayerSafetyDetector {
     this.prevSmoothedCenter = null
     this.prevSmoothedScale = 0.35
     this.lastPoseSeenTimestamp = 0
-    this.candidateEvent = null
-    this.confirmedAlertTimestamp = 0
-    this.confirmedAlertReason = null
-    this.smoothedConfidence = 94
+    this.currentState = 'MONITORING'
+    this.activeCandidate = null
+    this.lastConfirmedAlert = null
+    this.smoothedTrackingConfidence = 94
   }
 
   public processFrame(
@@ -69,13 +84,16 @@ export class PlayerSafetyDetector {
     if (!this.isCameraActive) {
       return {
         status: 'WAITING_FOR_PLAYER',
+        trackingConfidence: 0,
+        safetyConfidence: 0,
         confidence: 0,
         message: 'Camera is off',
         eventType: null,
         timestamp,
         isPoseDetected: false,
         trackingQuality: 0,
-        diagnostics: this.createEmptyDiagnostics(),
+        isNewConfirmedEvent: false,
+        diagnostics: this.createEmptyDiagnostics(timestamp),
       }
     }
 
@@ -84,7 +102,7 @@ export class PlayerSafetyDetector {
       return this.handleMissingPose(timestamp)
     }
 
-    // MediaPipe key landmarks:
+    // Key landmarks:
     // 0: nose, 11: left_shoulder, 12: right_shoulder, 23: left_hip, 24: right_hip
     // 13: left_elbow, 14: right_elbow, 15: left_wrist, 16: right_wrist
     // 25: left_knee, 26: right_knee, 27: left_ankle, 28: right_ankle
@@ -96,7 +114,7 @@ export class PlayerSafetyDetector {
     // Validate key torso landmarks
     const keyTorsoPoints = [ls, rs, lh, rh]
     const validTorsoCount = keyTorsoPoints.filter(
-      (p) => p && (p.visibility === undefined || p.visibility > 0.4),
+      (p) => p && (p.visibility === undefined || p.visibility > 0.35),
     ).length
 
     if (validTorsoCount < 3) {
@@ -105,7 +123,7 @@ export class PlayerSafetyDetector {
 
     this.lastPoseSeenTimestamp = timestamp
 
-    // 2. Compute Raw and Smoothed Centers & Scale
+    // 2. Compute Centers & Dynamic Body Scale
     const shoulderCenterRaw = { x: (ls.x + rs.x) / 2, y: (ls.y + rs.y) / 2 }
     const hipCenterRaw = { x: (lh.x + rh.x) / 2, y: (lh.y + rh.y) / 2 }
     const torsoCenterRaw = {
@@ -113,8 +131,11 @@ export class PlayerSafetyDetector {
       y: (shoulderCenterRaw.y + hipCenterRaw.y) / 2,
     }
 
-    // Body scale: torso height + shoulder width
-    const torsoHeight = Math.hypot(shoulderCenterRaw.x - hipCenterRaw.x, shoulderCenterRaw.y - hipCenterRaw.y)
+    // Body scale: distance between shoulders and hips + shoulder width
+    const torsoHeight = Math.hypot(
+      shoulderCenterRaw.x - hipCenterRaw.x,
+      shoulderCenterRaw.y - hipCenterRaw.y,
+    )
     const shoulderWidth = Math.hypot(ls.x - rs.x, ls.y - rs.y)
     const rawScale = Math.max(0.12, torsoHeight * 1.6 + shoulderWidth * 0.5)
 
@@ -143,9 +164,9 @@ export class PlayerSafetyDetector {
     }
     this.prevSmoothedCenter = smoothedCenter
 
-    // Spine angle relative to vertical (0 = straight upright, 90 = horizontal)
+    // Spine angle relative to vertical (0 = upright, 90 = horizontal)
     const dxSpine = shoulderCenterRaw.x - hipCenterRaw.x
-    const dySpine = hipCenterRaw.y - shoulderCenterRaw.y // positive if shoulders above hips
+    const dySpine = hipCenterRaw.y - shoulderCenterRaw.y
     const spineAngleRad = Math.atan2(Math.abs(dxSpine), Math.max(0.0001, dySpine))
     const spineAngleDeg = (spineAngleRad * 180) / Math.PI
 
@@ -156,7 +177,7 @@ export class PlayerSafetyDetector {
     const avgVisibility = visibilities.reduce((a, b) => a + b, 0) / (visibilities.length || 1)
     const trackingQuality = Math.min(100, Math.max(25, Math.round(avgVisibility * 100)))
 
-    // 3. Normalized Velocities and Accelerations
+    // 3. Normalized Kinematics (Scale-Invariant)
     let vx = 0
     let vy = 0
     let speed = 0
@@ -176,13 +197,27 @@ export class PlayerSafetyDetector {
       ay = (vy - prevFrame.velocity.vy) / dtSec
       accelMag = Math.sqrt(ax * ax + ay * ay)
 
-      // Limb deformation relative to torso center (filters out global camera motion)
+      // Limb deformation relative to torso center (filters global camera motion)
       if (landmarks[15] && landmarks[16] && landmarks[27] && landmarks[28]) {
-        const leftWristDist = Math.hypot(landmarks[15].x - smoothedCenter.x, landmarks[15].y - smoothedCenter.y)
-        const rightWristDist = Math.hypot(landmarks[16].x - smoothedCenter.x, landmarks[16].y - smoothedCenter.y)
-        const leftAnkleDist = Math.hypot(landmarks[27].x - smoothedCenter.x, landmarks[27].y - smoothedCenter.y)
-        const rightAnkleDist = Math.hypot(landmarks[28].x - smoothedCenter.x, landmarks[28].y - smoothedCenter.y)
-        limbDeformation = (leftWristDist + rightWristDist + leftAnkleDist + rightAnkleDist) / (smoothedScale * 4)
+        const leftWristDist = Math.hypot(
+          landmarks[15].x - smoothedCenter.x,
+          landmarks[15].y - smoothedCenter.y,
+        )
+        const rightWristDist = Math.hypot(
+          landmarks[16].x - smoothedCenter.x,
+          landmarks[16].y - smoothedCenter.y,
+        )
+        const leftAnkleDist = Math.hypot(
+          landmarks[27].x - smoothedCenter.x,
+          landmarks[27].y - smoothedCenter.y,
+        )
+        const rightAnkleDist = Math.hypot(
+          landmarks[28].x - smoothedCenter.x,
+          landmarks[28].y - smoothedCenter.y,
+        )
+        limbDeformation =
+          (leftWristDist + rightWristDist + leftAnkleDist + rightAnkleDist) /
+          (smoothedScale * 4)
       }
     }
 
@@ -199,176 +234,248 @@ export class PlayerSafetyDetector {
       visibility: avgVisibility,
     }
 
-    // Maintain 3.0s rolling history
+    // Maintain rolling temporal history
     this.history.push(currentRecord)
-    const cutoffTime = timestamp - this.maxHistoryDurationMs
+    const cutoffTime = timestamp - PlayerSafetyDetector.ROLLING_HISTORY_DURATION_MS
     this.history = this.history.filter((f) => f.timestamp >= cutoffTime)
 
-    // 4. Temporal Multi-Signal Evaluation
-    return this.evaluateSafetyWithTemporalConfirmation(currentRecord, timestamp, trackingQuality)
+    // 4. Run State Machine Evaluation
+    return this.evaluateStateMachine(currentRecord, timestamp, trackingQuality)
   }
 
   private handleMissingPose(timestamp: number): PlayerSafetyAssessment {
     const elapsedSinceLastPose = timestamp - (this.lastPoseSeenTimestamp || timestamp)
 
-    // Brief momentary occlusion (< 350ms): hold previous safe state smoothly
+    // Brief momentary occlusion (< 350ms): hold previous state smoothly
     if (elapsedSinceLastPose < 350 && this.history.length > 0) {
       return {
         status: 'SAFE',
-        confidence: Math.round(this.smoothedConfidence * 0.9),
+        trackingConfidence: Math.round(this.smoothedTrackingConfidence * 0.85),
+        safetyConfidence: 0,
+        confidence: Math.round(this.smoothedTrackingConfidence * 0.85),
         message: 'Monitoring normally',
         eventType: null,
         timestamp,
         isPoseDetected: false,
         trackingQuality: 35,
-        diagnostics: this.createEmptyDiagnostics(),
+        isNewConfirmedEvent: false,
+        diagnostics: this.createEmptyDiagnostics(timestamp),
       }
     }
 
-    // Reset candidate trigger on visibility loss
-    this.candidateEvent = null
+    // Clear candidate trigger on tracking loss
+    if (this.currentState === 'CANDIDATE' || this.currentState === 'OBSERVING') {
+      this.activeCandidate = null
+      this.currentState = 'MONITORING'
+    }
 
     // WAITING FOR PLAYER state (non-alert)
     return {
       status: 'WAITING_FOR_PLAYER',
+      trackingConfidence: 0,
+      safetyConfidence: 0,
       confidence: 0,
       message: 'Position the player fully inside the camera frame.',
       eventType: null,
       timestamp,
       isPoseDetected: false,
       trackingQuality: 0,
-      diagnostics: this.createEmptyDiagnostics(),
+      isNewConfirmedEvent: false,
+      diagnostics: this.createEmptyDiagnostics(timestamp),
     }
   }
 
-  private evaluateSafetyWithTemporalConfirmation(
+  private evaluateStateMachine(
     current: FrameLandmarkData,
     timestamp: number,
     trackingQuality: number,
   ): PlayerSafetyAssessment {
+    // Tracking confidence calculation (0-100%)
+    const baseTrackingConf = Math.min(
+      98,
+      Math.max(85, Math.round(trackingQuality * 0.95 + 4)),
+    )
+    this.smoothedTrackingConfidence = Math.round(
+      0.9 * this.smoothedTrackingConfidence + 0.1 * baseTrackingConf,
+    )
+
     // Warmup period
     if (this.history.length < 6) {
-      this.smoothedConfidence = 94
       return {
         status: 'SAFE',
-        confidence: 94,
+        trackingConfidence: this.smoothedTrackingConfidence,
+        safetyConfidence: 0,
+        confidence: this.smoothedTrackingConfidence,
         message: 'Monitoring normally',
         eventType: null,
         timestamp,
         isPoseDetected: true,
         trackingQuality,
-        diagnostics: this.createEmptyDiagnostics(current.bodyScale),
+        isNewConfirmedEvent: false,
+        diagnostics: this.createEmptyDiagnostics(timestamp, current.bodyScale),
       }
     }
 
-    // --- STEP A: COMPUTE WEIGHTED ABNORMALITY SCORE (0–100) ---
+    // --- STEP 1: CALCULATE COMPONENT SCORES ---
 
-    // 1. Impact-like acceleration impulse (0–25 pts)
-    // Sports sprinting/jumping naturally reaches acceleration of 5–12 scale/s^2.
-    // Collision/impact creates sudden jerk spike > 20 scale/s^2.
-    const impactScore = Math.min(25, Math.max(0, (current.acceleration.mag - 15) * 2.2))
+    // A. Impact Score (0–25 pts)
+    // NEVER trigger on acceleration alone!
+    // Requires: high acceleration (> 20 scale/s^2) + sharp direction shift (> 40 deg) + abnormal limb deformation
+    const prevFrames400 = this.history.filter((f) => f.timestamp >= timestamp - 400)
+    const prevSpineAngle = prevFrames400[0]?.spineAngleDeg ?? current.spineAngleDeg
+    const angleChange = Math.abs(current.spineAngleDeg - prevSpineAngle)
 
-    // 2. Sudden downward drop (0–25 pts)
-    // Downward vertical drop over last 400ms - 800ms
+    let impactScore = 0
+    if (current.acceleration.mag > 20 && angleChange > 35) {
+      const rawImpact = (current.acceleration.mag - 20) * 1.5 + (angleChange - 35) * 0.4
+      impactScore = Math.min(25, Math.max(0, rawImpact))
+    }
+
+    // B. Vertical Drop Score (0–25 pts)
+    // Downward vertical drop over last 400ms - 700ms
     const recentDropFrames = this.history.filter((f) => f.timestamp >= timestamp - 650)
     const initialY = recentDropFrames[0]?.torsoCenter.y ?? current.torsoCenter.y
     const netVerticalDrop = (current.torsoCenter.y - initialY) / current.bodyScale
-    const dropScore = Math.min(25, Math.max(0, netVerticalDrop > 0.35 && current.velocity.vy > 1.8 ? netVerticalDrop * 35 : 0))
+    let dropScore = 0
+    if (netVerticalDrop > 0.40 && current.velocity.vy > 2.0) {
+      dropScore = Math.min(25, Math.max(0, (netVerticalDrop - 0.40) * 45))
+    }
 
-    // 3. Unusual body orientation (0–15 pts)
-    // Horizontal spine angle (> 55 degrees)
-    const orientationScore = Math.min(15, Math.max(0, (current.spineAngleDeg - 45) * 0.45))
+    // C. Unusual Orientation Score (0–15 pts)
+    // Near-horizontal spine angle (> 55 degrees)
+    const orientationScore = Math.min(15, Math.max(0, (current.spineAngleDeg - 48) * 0.45))
 
-    // 4. Abrupt direction discordance (0–10 pts)
-    const prevFrames = this.history.filter((f) => f.timestamp >= timestamp - 400)
-    const prevSpineAngle = prevFrames[0]?.spineAngleDeg ?? current.spineAngleDeg
-    const angleChange = Math.abs(current.spineAngleDeg - prevSpineAngle)
+    // D. Direction Discordance Score (0–10 pts)
     const directionScore = Math.min(10, Math.max(0, (angleChange - 30) * 0.35))
 
-    // 5. Post-event ground stillness / inactivity (0–20 pts)
-    // Check average velocity over recent 700ms when near ground level
+    // E. Post-Event Stillness / Ground Inactivity Score (0–20 pts)
+    // Calculated over recent 700ms window
     const stillnessFrames = this.history.filter((f) => f.timestamp >= timestamp - 700)
     const avgRecentSpeed =
       stillnessFrames.reduce((sum, f) => sum + f.velocity.speed, 0) / (stillnessFrames.length || 1)
-    const isGroundLevel = current.spineAngleDeg > 50 || current.torsoCenter.y > 0.70
-    const stillnessScore = isGroundLevel && avgRecentSpeed < 0.20
-      ? Math.min(20, (0.22 - avgRecentSpeed) * 100)
-      : 0
+    const isGroundPosture = current.spineAngleDeg > 52 || current.torsoCenter.y > 0.70
+    const stillnessScore =
+      isGroundPosture && avgRecentSpeed < 0.18
+        ? Math.min(20, Math.max(0, (0.20 - avgRecentSpeed) * 110))
+        : 0
 
-    // 6. Persistent abnormal posture (0–15 pts)
+    // F. Persistent Ground State (0–15 pts)
     const groundFrames = this.history.filter(
       (f) => f.timestamp >= timestamp - 1200 && (f.spineAngleDeg > 50 || f.torsoCenter.y > 0.68),
     )
-    const persistenceScore = groundFrames.length > 25 ? 15 : (groundFrames.length / 25) * 10
+    const persistenceScore =
+      groundFrames.length > 25 ? 15 : Math.round((groundFrames.length / 25) * 10)
 
-    // Combined Weighted Abnormality Score
-    const rawAbnormalityScore = impactScore + dropScore + orientationScore + directionScore + stillnessScore + persistenceScore
-    const abnormalityScore = Math.min(100, Math.round(rawAbnormalityScore))
+    // Total Abnormality Score (0–100)
+    const abnormalityScore = Math.min(
+      100,
+      Math.round(
+        impactScore + dropScore + orientationScore + directionScore + stillnessScore + persistenceScore,
+      ),
+    )
 
-    // Sports Activity Normalcy Checks
-    const isUpright = current.spineAngleDeg < 38 && current.torsoCenter.y < 0.65
-    const isMovingNormally = avgRecentSpeed >= 0.15 && avgRecentSpeed < 5.0
+    // Athletic Recovery Checks
+    const isUpright = current.spineAngleDeg < 36 && current.torsoCenter.y < 0.65
+    const isMovingNormally = avgRecentSpeed >= 0.20 && avgRecentSpeed < 5.0
     const isAthleteActiveAndRecovered = isUpright && isMovingNormally
 
-    // --- STEP B: TWO-STAGE TEMPORAL CONFIRMATION ---
+    // --- STEP 2: COOLDOWN & STATE MACHINE TRANSITIONS ---
 
-    let temporalConfirmationStatus: 'CONFIRMED' | 'OBSERVING' | 'NO' = 'NO'
-    let activeCandidateEventType: AbnormalEventType | null = null
-
-    // 1. Check for candidate trigger initiation
-    if (abnormalityScore >= 48 && !this.candidateEvent) {
-      const detectedType: AbnormalEventType = impactScore > 15 ? 'possible_impact' : 'possible_fall'
-      this.candidateEvent = {
-        timestamp,
-        eventType: detectedType,
-        peakScore: abnormalityScore,
-        initialY: current.torsoCenter.y,
-      }
-    }
-
-    // 2. Evaluate active candidate event over temporal window (0.5s - 1.5s)
-    if (this.candidateEvent) {
-      const elapsedSinceCandidate = timestamp - this.candidateEvent.timestamp
-      activeCandidateEventType = this.candidateEvent.eventType
-
-      if (isAthleteActiveAndRecovered && elapsedSinceCandidate >= 400) {
-        // Normal athletic recovery observed -> Clear candidate immediately!
-        this.candidateEvent = null
-        temporalConfirmationStatus = 'NO'
-      } else if (elapsedSinceCandidate >= 600 && elapsedSinceCandidate <= 2200) {
-        // In observation window: check if abnormal pattern persists or ground stillness confirms it
-        if (abnormalityScore >= 52 || (isGroundLevel && avgRecentSpeed < 0.25)) {
-          // Confirmed Abnormal Event!
-          temporalConfirmationStatus = 'CONFIRMED'
-          this.confirmedAlertTimestamp = timestamp
-          const alertMessage =
-            this.candidateEvent.eventType === 'possible_impact'
-              ? 'Possible impact event detected. Please check the player.'
-              : 'Possible abnormal movement detected. Please check the player.'
-
-          const alertConf = Math.min(96, Math.max(88, Math.round(86 + abnormalityScore * 0.1)))
-          this.confirmedAlertReason = {
-            message: alertMessage,
-            eventType: this.candidateEvent.eventType,
-            confidence: alertConf,
-          }
-          this.candidateEvent = null
-        } else {
-          temporalConfirmationStatus = 'OBSERVING'
-        }
-      } else if (elapsedSinceCandidate > 2200) {
-        // Window expired without confirmation
-        this.candidateEvent = null
-        temporalConfirmationStatus = 'NO'
+    let cooldownRemainingSec = 0
+    if (this.lastConfirmedAlert) {
+      const elapsedSinceConfirmed = timestamp - this.lastConfirmedAlert.timestamp
+      if (elapsedSinceConfirmed < PlayerSafetyDetector.EVENT_COOLDOWN_MS) {
+        cooldownRemainingSec = Number(
+          ((PlayerSafetyDetector.EVENT_COOLDOWN_MS - elapsedSinceConfirmed) / 1000).toFixed(1),
+        )
+        this.currentState = 'COOLDOWN'
       } else {
-        temporalConfirmationStatus = 'OBSERVING'
+        // Cooldown finished
+        this.lastConfirmedAlert = null
+        this.currentState = 'MONITORING'
       }
     }
 
-    // --- STEP C: HYSTERESIS & ALERT HOLD HANDLING ---
+    let isNewConfirmedEvent = false
+    let currentEventId: string | null = null
 
-    const timeSinceConfirmedAlert = timestamp - this.confirmedAlertTimestamp
-    const isInAlertHold = timeSinceConfirmedAlert < this.alertHoldDurationMs
+    // If NOT in cooldown, handle MONITORING -> CANDIDATE -> OBSERVING -> CONFIRMED
+    if (this.currentState !== 'COOLDOWN') {
+      // 1. MONITORING -> CANDIDATE trigger
+      if (this.currentState === 'MONITORING' && !this.activeCandidate) {
+        // Candidate triggers ONLY on strong multi-signal event
+        const isImpactCandidate = impactScore >= 16
+        const isFallCandidate = dropScore >= 16 || (dropScore >= 10 && orientationScore >= 8)
+
+        if (isImpactCandidate || isFallCandidate || abnormalityScore >= 52) {
+          const detectedType: AbnormalEventType =
+            isImpactCandidate ? 'possible_impact' : 'possible_fall'
+          this.activeCandidate = {
+            id: `cand-${Math.round(timestamp)}-${Math.random().toString(36).substring(2, 6)}`,
+            startTimestamp: timestamp,
+            eventType: detectedType,
+            peakScore: abnormalityScore,
+            initialY: current.torsoCenter.y,
+          }
+          this.currentState = 'OBSERVING'
+        }
+      }
+
+      // 2. OBSERVING -> Evaluate candidate evidence over 0.5s – 1.8s
+      if (this.activeCandidate) {
+        const elapsedSinceCandidate = timestamp - this.activeCandidate.startTimestamp
+        this.activeCandidate.peakScore = Math.max(this.activeCandidate.peakScore, abnormalityScore)
+
+        if (isAthleteActiveAndRecovered && elapsedSinceCandidate >= PlayerSafetyDetector.CANDIDATE_OBSERVE_MIN_MS - 200) {
+          // Normal Recovery observed! Clear candidate immediately.
+          this.activeCandidate = null
+          this.currentState = 'MONITORING'
+        } else if (
+          elapsedSinceCandidate >= PlayerSafetyDetector.CANDIDATE_OBSERVE_MIN_MS &&
+          elapsedSinceCandidate <= PlayerSafetyDetector.CANDIDATE_OBSERVE_MAX_MS
+        ) {
+          // Check for confirmation evidence: persistent ground stillness or persistent high abnormality
+          const isConfirmedByStillness = isGroundPosture && avgRecentSpeed < 0.20
+          const isConfirmedBySustainedAbnormality = this.activeCandidate.peakScore >= 56 && abnormalityScore >= 45
+
+          if (isConfirmedByStillness || isConfirmedBySustainedAbnormality) {
+            // CONFIRM EVENT!
+            this.currentState = 'CONFIRMED'
+            isNewConfirmedEvent = true
+            currentEventId = `evt-${Math.round(timestamp)}-${Math.random().toString(36).substring(2, 6)}`
+
+            const alertMsg =
+              this.activeCandidate.eventType === 'possible_impact'
+                ? 'Possible impact event detected. Please check the player.'
+                : 'Possible abnormal movement detected. Please check the player.'
+
+            // Calculate Safety Event Confidence (0-100%) distinct from camera tracking confidence
+            const safetyConf = Math.min(
+              94,
+              Math.max(65, Math.round(55 + this.activeCandidate.peakScore * 0.35 + stillnessScore * 0.5)),
+            )
+
+            this.lastConfirmedAlert = {
+              id: currentEventId,
+              timestamp,
+              eventType: this.activeCandidate.eventType,
+              message: alertMsg,
+              safetyConfidence: safetyConf,
+            }
+
+            this.activeCandidate = null
+            cooldownRemainingSec = Number((PlayerSafetyDetector.EVENT_COOLDOWN_MS / 1000).toFixed(1))
+            this.currentState = 'COOLDOWN'
+          }
+        } else if (elapsedSinceCandidate > PlayerSafetyDetector.CANDIDATE_OBSERVE_MAX_MS) {
+          // Window timed out without confirmed abnormality -> Clear candidate
+          this.activeCandidate = null
+          this.currentState = 'MONITORING'
+        }
+      }
+    }
+
+    // --- STEP 3: RESOLVE FINAL USER-FACING SAFETY STATUS & DIAGNOSTICS ---
 
     const diagnostics: SafetyDiagnostics = {
       bodyScale: Number(current.bodyScale.toFixed(2)),
@@ -376,74 +483,99 @@ export class PlayerSafetyDetector {
       verticalAcceleration: Number(current.acceleration.ay.toFixed(2)),
       movementScore: Number(avgRecentSpeed.toFixed(2)),
       impactScore: Math.round(impactScore),
+      verticalDropScore: Math.round(dropScore),
       postEventStillness: Math.round(stillnessScore),
       abnormalityScore,
-      temporalConfirmation: isInAlertHold ? 'CONFIRMED' : temporalConfirmationStatus,
-      rawEventCandidate: activeCandidateEventType,
+      eventState: this.currentState,
+      cooldownRemainingSec,
+      trackingConfidence: this.smoothedTrackingConfidence,
+      safetyEventConfidence: this.lastConfirmedAlert?.safetyConfidence ?? 0,
+      rawEventCandidate: this.activeCandidate?.eventType ?? null,
     }
 
-    // If alert is confirmed and currently active
-    if (this.confirmedAlertReason && isInAlertHold) {
-      // If player clearly recovered upright and is actively exercising for > 1.8s
-      if (isAthleteActiveAndRecovered && timeSinceConfirmedAlert > 1800) {
-        this.confirmedAlertTimestamp = 0
-        this.confirmedAlertReason = null
-        this.smoothedConfidence = 94
+    // Check if active alert hold window is currently active
+    if (this.lastConfirmedAlert) {
+      const timeSinceAlert = timestamp - this.lastConfirmedAlert.timestamp
+
+      // Active alert banner displays during alert hold duration (4.0s)
+      if (timeSinceAlert < PlayerSafetyDetector.ALERT_HOLD_DURATION_MS) {
+        // If athlete recovered upright and active after 2s, allow smooth recovery
+        if (isAthleteActiveAndRecovered && timeSinceAlert > 2200) {
+          return {
+            status: 'SAFE',
+            trackingConfidence: this.smoothedTrackingConfidence,
+            safetyConfidence: this.lastConfirmedAlert.safetyConfidence,
+            confidence: this.smoothedTrackingConfidence,
+            message: 'Normal movement detected',
+            eventType: null,
+            eventId: null,
+            timestamp,
+            isPoseDetected: true,
+            trackingQuality,
+            isNewConfirmedEvent: false,
+            diagnostics,
+          }
+        }
+
         return {
-          status: 'SAFE',
-          confidence: 94,
-          message: 'Monitoring normally',
-          eventType: null,
+          status: 'ATTENTION_REQUIRED',
+          trackingConfidence: this.smoothedTrackingConfidence,
+          safetyConfidence: this.lastConfirmedAlert.safetyConfidence,
+          confidence: this.lastConfirmedAlert.safetyConfidence,
+          message: this.lastConfirmedAlert.message,
+          eventType: this.lastConfirmedAlert.eventType,
+          eventId: this.lastConfirmedAlert.id,
           timestamp,
           isPoseDetected: true,
           trackingQuality,
+          isNewConfirmedEvent,
           diagnostics,
         }
       }
-
-      this.smoothedConfidence = Math.round(
-        0.85 * this.smoothedConfidence + 0.15 * this.confirmedAlertReason.confidence,
-      )
-
-      return {
-        status: 'ATTENTION_REQUIRED',
-        confidence: this.smoothedConfidence,
-        message: this.confirmedAlertReason.message,
-        eventType: this.confirmedAlertReason.eventType,
-        timestamp,
-        isPoseDetected: true,
-        trackingQuality,
-        diagnostics,
-      }
     }
 
-    // Normal athletic movement state (Running, sprinting, jumping, crouching, turning)
-    const baseSafeConfidence = Math.min(98, Math.max(90, Math.round(trackingQuality * 0.95 + 4)))
-    this.smoothedConfidence = Math.round(0.9 * this.smoothedConfidence + 0.1 * baseSafeConfidence)
-
+    // Normal safe monitoring
     return {
       status: 'SAFE',
-      confidence: this.smoothedConfidence,
-      message: 'Monitoring normally',
+      trackingConfidence: this.smoothedTrackingConfidence,
+      safetyConfidence: 0,
+      confidence: this.smoothedTrackingConfidence,
+      message: 'Normal movement detected',
       eventType: null,
+      eventId: null,
       timestamp,
       isPoseDetected: true,
       trackingQuality,
+      isNewConfirmedEvent: false,
       diagnostics,
     }
   }
 
-  private createEmptyDiagnostics(scale = 0.35): SafetyDiagnostics {
+  private createEmptyDiagnostics(timestamp = performance.now(), scale = 0.35): SafetyDiagnostics {
+    let cooldownSec = 0
+    if (this.lastConfirmedAlert) {
+      const elapsed = timestamp - this.lastConfirmedAlert.timestamp
+      if (elapsed < PlayerSafetyDetector.EVENT_COOLDOWN_MS) {
+        cooldownSec = Number(
+          ((PlayerSafetyDetector.EVENT_COOLDOWN_MS - elapsed) / 1000).toFixed(1),
+        )
+      }
+    }
+
     return {
       bodyScale: Number(scale.toFixed(2)),
       verticalVelocity: 0,
       verticalAcceleration: 0,
       movementScore: 0,
       impactScore: 0,
+      verticalDropScore: 0,
       postEventStillness: 0,
       abnormalityScore: 0,
-      temporalConfirmation: 'NO',
-      rawEventCandidate: null,
+      eventState: this.currentState,
+      cooldownRemainingSec: cooldownSec,
+      trackingConfidence: this.smoothedTrackingConfidence,
+      safetyEventConfidence: this.lastConfirmedAlert?.safetyConfidence ?? 0,
+      rawEventCandidate: this.activeCandidate?.eventType ?? null,
     }
   }
 }
