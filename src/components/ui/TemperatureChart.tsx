@@ -44,7 +44,7 @@ export function TemperatureChart({ readings, range, onRangeChange }: Temperature
   }, [points])
 
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3">
         <div>
           <h3 className="text-sm font-semibold text-navy">Sensor Temperature Progression</h3>
@@ -79,10 +79,10 @@ export function TemperatureChart({ readings, range, onRangeChange }: Temperature
         </div>
       </div>
 
-      <div className="mt-4 min-h-[220px]">
+      <div className="mt-4 h-[300px] w-full overflow-hidden">
         {points.length === 0 ? (
           <EmptyState
-            className="h-[220px]"
+            className="h-full"
             title="No temperature data in this window."
             description="The chart plots real ear-sensor readings received from your ESP32 hardware gateway."
           />
@@ -110,7 +110,7 @@ function filterReadings(readings: TemperatureReading[], range: HistoryRange) {
 
 function LineChart({ points }: { points: { timestamp: string; temperature: number }[] }) {
   const width = 640
-  const height = 220
+  const height = 300
   const padTop = 20
   const padBottom = 30
   const padLeft = 45
@@ -147,7 +147,7 @@ function LineChart({ points }: { points: { timestamp: string; temperature: numbe
   return (
     <svg
       viewBox={`0 0 ${width} ${height}`}
-      className="h-[220px] w-full overflow-visible"
+      className="h-full w-full overflow-hidden"
       role="img"
       aria-label="Temperature progression curve"
     >
