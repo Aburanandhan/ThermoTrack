@@ -18,6 +18,7 @@ import {
   resolveTemperatureStatus,
 } from '../lib/status'
 import { cn } from '../lib/cn'
+import { LivePlayerSafety } from '../components/safety/LivePlayerSafety'
 import type { HistoryRange } from '../types/monitoring'
 
 export function AthleteDetailPage() {
@@ -308,6 +309,9 @@ export function AthleteDetailPage() {
             </p>
           )}
         </section>
+
+        {/* AI Player Safety Monitoring */}
+        <LivePlayerSafety athlete={athlete} />
 
         {/* Real Temperature History Chart */}
         <TemperatureChart readings={history} range={range} onRangeChange={setRange} />
