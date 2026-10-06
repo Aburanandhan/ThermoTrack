@@ -119,9 +119,9 @@ function LineChart({ points }: { points: { timestamp: string; temperature: numbe
   const temps = points.map((p) => p.temperature)
   const dataMin = Math.min(...temps)
   const dataMax = Math.max(...temps)
-  // Give padding to bounds
-  const min = Math.max(35.0, Math.floor((dataMin - 0.2) * 10) / 10)
-  const max = Math.min(42.0, Math.ceil((dataMax + 0.2) * 10) / 10)
+  // Give dynamic padding to bounds based on actual data
+  const min = Math.floor((dataMin - 0.5) * 10) / 10
+  const max = Math.ceil((dataMax + 0.5) * 10) / 10
   const span = Math.max(max - min, 0.6)
 
   const plotW = width - padLeft - padRight
