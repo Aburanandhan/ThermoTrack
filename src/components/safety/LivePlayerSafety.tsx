@@ -1,7 +1,10 @@
 import {
+  Activity,
   AlertTriangle,
   Camera,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Eye,
   Info,
   RefreshCw,
@@ -15,6 +18,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { PlayerSafetyDetector } from '../../lib/safety/playerSafetyDetector'
 import { poseEstimator } from '../../lib/safety/poseEstimator'
 import { cn } from '../../lib/cn'
+import { useMonitoring } from '../../context/MonitoringContext'
 import type {
   CameraState,
   PlayerSafetyAssessment,
@@ -28,10 +32,12 @@ interface LivePlayerSafetyProps {
 }
 
 export function LivePlayerSafety({ athlete, className }: LivePlayerSafetyProps) {
+  const { updateAthleteSafety } = useMonitoring()
   const [cameraState, setCameraState] = useState<CameraState>('OFF')
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment')
   const [hasMultipleCameras, setHasMultipleCameras] = useState(false)
+  const [showDiagnostics, setShowDiagnostics] = useState(false)
 
   const [assessment, setAssessment] = useState<PlayerSafetyAssessment>({
     status: 'SAFE',
@@ -98,16 +104,21 @@ export function LivePlayerSafety({ athlete, className }: LivePlayerSafetyProps) 
     setCameraState('OFF')
     setErrorMessage(null)
     setFps(0)
-    setAssessment({
-      status: 'SAFE',
+    const stoppedAssessment: PlayerSafetyAssessment = {
+      status: 'WAITING_FOR_PLAYER',
       confidence: 0,
       message: 'Camera is off',
       eventType: null,
-      timestamp: Date.now(),
+      timestamp: 0,
       isPoseDetected: false,
       trackingQuality: 0,
-    })
-  }, [])
+    }
+    setAssessment(stoppedAssessment)
+    updateAthleteSafety(athlete.id, stoppedAssessment, false)
+  }, [athlete.id, updateAthleteSafety])
+
+  const lastSyncTimeRef = useRef<number>(0)
+  const lastSyncStatusRef = useRef<string>('')
 
   // Main pose processing & animation frame loop
   const startProcessingLoop = useCallback(() => {
@@ -152,6 +163,17 @@ export function LivePlayerSafety({ athlete, className }: LivePlayerSafetyProps) 
 
         setAssessment(currentAssessment)
 
+        // Sync to shared MonitoringContext
+        const statusKey = `${currentAssessment.status}-${currentAssessment.message}-${Math.round(currentAssessment.confidence)}`
+        if (
+          statusKey !== lastSyncStatusRef.current ||
+          nowMs - lastSyncTimeRef.current >= 1000
+        ) {
+          lastSyncStatusRef.current = statusKey
+          lastSyncTimeRef.current = nowMs
+          updateAthleteSafety(athlete.id, currentAssessment, true)
+        }
+
         // If newly detected attention required event with specific event type, log to history
         if (
           currentAssessment.status === 'ATTENTION_REQUIRED' &&
@@ -189,7 +211,7 @@ export function LivePlayerSafety({ athlete, className }: LivePlayerSafetyProps) 
     }
 
     animFrameIdRef.current = requestAnimationFrame(renderLoop)
-  }, [athlete])
+  }, [athlete, updateAthleteSafety])
 
   // Initialize camera and start video stream
   const startCamera = useCallback(
@@ -702,6 +724,102 @@ export function LivePlayerSafety({ athlete, className }: LivePlayerSafetyProps) 
               </dl>
             </div>
           </div>
+        </div>
+
+        {/* Prototype Diagnostics Debug Panel */}
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/80 p-3.5 text-xs">
+          <button
+            type="button"
+            onClick={() => setShowDiagnostics((prev) => !prev)}
+            className="flex w-full items-center justify-between font-semibold text-slate-700 hover:text-navy cursor-pointer"
+          >
+            <div className="flex items-center gap-2">
+              <Activity className="h-4 w-4 text-teal" />
+              <span>Prototype Diagnostics</span>
+              <span className="rounded bg-teal/10 px-1.5 py-0.5 text-[10px] font-medium text-teal">
+                CV TELEMETRY
+              </span>
+            </div>
+            {showDiagnostics ? (
+              <ChevronUp className="h-4 w-4 text-slate-400" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-slate-400" />
+            )}
+          </button>
+
+          {showDiagnostics ? (
+            <div className="mt-3 pt-3 border-t border-slate-200 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-[11px]">
+              <div className="rounded-lg bg-white p-2.5 border border-slate-200 shadow-2xs">
+                <span className="text-slate-500">Tracking Quality</span>
+                <p className="mt-1 font-mono font-semibold text-navy">
+                  {assessment.trackingQuality}%
+                </p>
+              </div>
+              <div className="rounded-lg bg-white p-2.5 border border-slate-200 shadow-2xs">
+                <span className="text-slate-500">Body Scale (Torso)</span>
+                <p className="mt-1 font-mono font-semibold text-navy">
+                  {assessment.diagnostics?.bodyScale ?? '--'}
+                </p>
+              </div>
+              <div className="rounded-lg bg-white p-2.5 border border-slate-200 shadow-2xs">
+                <span className="text-slate-500">Vertical Velocity</span>
+                <p className="mt-1 font-mono font-semibold text-navy">
+                  {assessment.diagnostics?.verticalVelocity ?? 0} scale/s
+                </p>
+              </div>
+              <div className="rounded-lg bg-white p-2.5 border border-slate-200 shadow-2xs">
+                <span className="text-slate-500">Vertical Acceleration</span>
+                <p className="mt-1 font-mono font-semibold text-navy">
+                  {assessment.diagnostics?.verticalAcceleration ?? 0} scale/s²
+                </p>
+              </div>
+              <div className="rounded-lg bg-white p-2.5 border border-slate-200 shadow-2xs">
+                <span className="text-slate-500">Movement Score</span>
+                <p className="mt-1 font-mono font-semibold text-navy">
+                  {assessment.diagnostics?.movementScore ?? 0}
+                </p>
+              </div>
+              <div className="rounded-lg bg-white p-2.5 border border-slate-200 shadow-2xs">
+                <span className="text-slate-500">Impact Score</span>
+                <p className="mt-1 font-mono font-semibold text-navy">
+                  {assessment.diagnostics?.impactScore ?? 0} / 25
+                </p>
+              </div>
+              <div className="rounded-lg bg-white p-2.5 border border-slate-200 shadow-2xs">
+                <span className="text-slate-500">Post-Event Stillness</span>
+                <p className="mt-1 font-mono font-semibold text-navy">
+                  {assessment.diagnostics?.postEventStillness ?? 0} / 20
+                </p>
+              </div>
+              <div className="rounded-lg bg-white p-2.5 border border-slate-200 shadow-2xs">
+                <span className="text-slate-500">Abnormality Score</span>
+                <div className="mt-1 flex items-center justify-between">
+                  <p
+                    className={cn(
+                      'font-mono font-semibold',
+                      (assessment.diagnostics?.abnormalityScore ?? 0) >= 50
+                        ? 'text-red-600'
+                        : 'text-emerald-600',
+                    )}
+                  >
+                    {assessment.diagnostics?.abnormalityScore ?? 0} / 100
+                  </p>
+                  <span
+                    className={cn(
+                      'rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase',
+                      assessment.diagnostics?.temporalConfirmation === 'CONFIRMED'
+                        ? 'bg-red-100 text-red-700'
+                        : assessment.diagnostics?.temporalConfirmation === 'OBSERVING'
+                          ? 'bg-amber-100 text-amber-700'
+                          : 'bg-emerald-50 text-emerald-700',
+                    )}
+                  >
+                    {assessment.diagnostics?.temporalConfirmation ?? 'NO'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
 
         {/* Recent Abnormal Events Log for this session */}

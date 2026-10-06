@@ -20,6 +20,18 @@ export interface PoseLandmarkPoint {
   visibility?: number
 }
 
+export interface SafetyDiagnostics {
+  bodyScale: number
+  verticalVelocity: number
+  verticalAcceleration: number
+  movementScore: number
+  impactScore: number
+  postEventStillness: number
+  abnormalityScore: number
+  temporalConfirmation: 'CONFIRMED' | 'OBSERVING' | 'NO'
+  rawEventCandidate?: AbnormalEventType | null
+}
+
 export interface PlayerSafetyAssessment {
   status: SafetyStatus
   confidence: number // 0 to 100 percentage
@@ -28,6 +40,7 @@ export interface PlayerSafetyAssessment {
   timestamp: number
   isPoseDetected: boolean
   trackingQuality: number // 0 to 100 percentage
+  diagnostics?: SafetyDiagnostics
 }
 
 export interface SafetyDetectionEvent {
