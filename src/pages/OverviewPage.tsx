@@ -1,10 +1,12 @@
 import {
   AlertTriangle,
+  ArrowRight,
   Calendar,
   CheckCircle2,
   Cpu,
   Plus,
   RefreshCw,
+  Shield,
   TrendingDown,
   TrendingUp,
   UserPlus,
@@ -35,6 +37,7 @@ export function OverviewPage() {
     alerts,
     sessions,
     stream,
+    safetyMap,
     loading,
     error,
     refresh,
@@ -83,9 +86,8 @@ export function OverviewPage() {
         <section className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-xs sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <div
-              className={`flex h-8 w-8 items-center justify-center rounded-lg ${
-                stream.connected ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'
-              }`}
+              className={`flex h-8 w-8 items-center justify-center rounded-lg ${stream.connected ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'
+                }`}
             >
               {stream.connected ? (
                 <Wifi className="h-4 w-4" />
@@ -96,16 +98,14 @@ export function OverviewPage() {
             <div>
               <div className="flex items-center gap-2">
                 <span
-                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                    stream.connected
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${stream.connected
                       ? 'bg-emerald-100 text-emerald-800'
                       : 'bg-slate-100 text-slate-600'
-                  }`}
+                    }`}
                 >
                   <span
-                    className={`h-1.5 w-1.5 rounded-full ${
-                      stream.connected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'
-                    }`}
+                    className={`h-1.5 w-1.5 rounded-full ${stream.connected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'
+                      }`}
                   />
                   {stream.connected ? 'LIVE MONITORING' : 'WAITING FOR DEVICES'}
                 </span>
@@ -223,16 +223,14 @@ export function OverviewPage() {
                         </p>
                       </div>
                       <span
-                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
-                          connection === 'connected'
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${connection === 'connected'
                             ? 'bg-emerald-50 text-emerald-700'
                             : 'bg-slate-100 text-slate-600'
-                        }`}
+                          }`}
                       >
                         <span
-                          className={`h-1.5 w-1.5 rounded-full ${
-                            connection === 'connected' ? 'bg-emerald-500' : 'bg-slate-400'
-                          }`}
+                          className={`h-1.5 w-1.5 rounded-full ${connection === 'connected' ? 'bg-emerald-500' : 'bg-slate-400'
+                            }`}
                         />
                         {connectionLabel(connection)}
                       </span>
@@ -252,9 +250,8 @@ export function OverviewPage() {
                           </span>
                           {trend !== null && Math.abs(trend) >= 0.1 ? (
                             <span
-                              className={`inline-flex items-center text-xs font-semibold ${
-                                trend > 0 ? 'text-amber-600' : 'text-teal'
-                              }`}
+                              className={`inline-flex items-center text-xs font-semibold ${trend > 0 ? 'text-amber-600' : 'text-teal'
+                                }`}
                             >
                               {trend > 0 ? (
                                 <TrendingUp className="h-3 w-3 mr-0.5" />
@@ -293,6 +290,175 @@ export function OverviewPage() {
           )}
         </section>
 
+        {/* Live Player Safety Section */}
+        <section className="space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-semibold text-navy">Live Player Safety</h2>
+                <span className="rounded-full bg-slate-200/80 px-2 py-0.5 text-[10px] font-medium text-slate-700">
+                  AI VISION
+                </span>
+              </div>
+              <p className="text-xs text-slate-500">
+                Continuous pose & movement safety status across monitored athletes.
+              </p>
+            </div>
+            {athletes.length > 0 ? (
+              <Link to="/athletes" className="text-xs font-semibold text-teal hover:underline">
+                View All Athletes ({athletes.length}) →
+              </Link>
+            ) : null}
+          </div>
+
+          {athletes.length === 0 ? (
+            <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-xs">
+              <Shield className="mx-auto h-10 w-10 text-slate-300" />
+              <h3 className="mt-3 text-sm font-semibold text-navy">No athletes registered</h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Register athletes to begin AI player safety and posture monitoring.
+              </p>
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {athletes.map((athlete) => {
+                const safety = safetyMap[athlete.id]
+                const hasSafetyData = Boolean(safety && safety.isMonitoringActive)
+                const isWaitingForPlayer = hasSafetyData && safety.status === 'WAITING_FOR_PLAYER'
+                const isAttentionRequired = hasSafetyData && safety.status === 'ATTENTION_REQUIRED'
+                const isSafe = hasSafetyData && safety.status === 'SAFE'
+
+                return (
+                  <div
+                    key={athlete.id}
+                    className={`flex flex-col justify-between rounded-xl border p-4 shadow-xs transition ${
+                      !hasSafetyData
+                        ? 'border-slate-200 bg-white'
+                        : isAttentionRequired
+                          ? 'border-red-300 bg-red-50/60 hover:border-red-400'
+                          : isSafe
+                            ? 'border-emerald-200 bg-emerald-50/40 hover:border-emerald-300'
+                            : 'border-slate-200 bg-slate-50/60 hover:border-slate-300'
+                    }`}
+                  >
+                    <div>
+                      {/* Athlete header */}
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <h4 className="font-semibold text-navy">{athlete.name}</h4>
+                          <p className="text-xs font-mono text-slate-400">{athlete.athleteId}</p>
+                        </div>
+                        {hasSafetyData ? (
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                              isAttentionRequired
+                                ? 'bg-red-100 text-red-800'
+                                : isSafe
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-slate-200 text-slate-700'
+                            }`}
+                          >
+                            <span
+                              className={`h-1.5 w-1.5 rounded-full ${
+                                isAttentionRequired
+                                  ? 'bg-red-500 animate-ping'
+                                  : isSafe
+                                    ? 'bg-emerald-500'
+                                    : 'bg-slate-400'
+                              }`}
+                            />
+                            {isAttentionRequired ? 'ALERT' : isSafe ? 'ACTIVE' : 'STANDBY'}
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                            STANDBY
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Coach-Facing Status Display */}
+                      <div className="mt-4 border-t border-slate-100 pt-3">
+                        {hasSafetyData ? (
+                          <>
+                            <div className="flex items-center gap-2">
+                              {isAttentionRequired ? (
+                                <div className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white shadow-2xs">
+                                  <AlertTriangle className="h-3.5 w-3.5" />
+                                  <span>ATTENTION REQUIRED</span>
+                                </div>
+                              ) : isSafe ? (
+                                <div className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-2xs">
+                                  <span className="h-2 w-2 rounded-full bg-white" />
+                                  <span>SAFE</span>
+                                </div>
+                              ) : (
+                                <div className="inline-flex items-center gap-1.5 rounded-lg bg-slate-200 border border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-800 shadow-2xs">
+                                  <span className="h-2 w-2 rounded-full bg-white border border-slate-400" />
+                                  <span>WAITING FOR PLAYER</span>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="mt-2.5 flex items-center justify-between text-xs">
+                              <span className="text-slate-500">Confidence:</span>
+                              <span className="font-semibold font-mono text-navy">
+                                {isWaitingForPlayer ? '--' : `${safety.confidence}%`}
+                              </span>
+                            </div>
+
+                            <p
+                              className={`mt-1.5 text-xs font-medium ${
+                                isAttentionRequired
+                                  ? 'text-red-700 font-semibold'
+                                  : isSafe
+                                    ? 'text-slate-600'
+                                    : 'text-slate-500'
+                              }`}
+                            >
+                              {isWaitingForPlayer
+                                ? 'Position the player fully inside the camera frame.'
+                                : isSafe
+                                  ? 'Monitoring active'
+                                  : safety.message}
+                            </p>
+
+                            <p className="mt-2 text-[10px] text-slate-400">
+                              Last safety update: {formatTimestamp(safety.lastUpdate)}
+                            </p>
+                          </>
+                        ) : (
+                          <div className="py-2">
+                            <div className="inline-flex items-center gap-1.5 rounded-md bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                              <span>WAITING FOR SAFETY DATA</span>
+                            </div>
+                            <p className="mt-2 text-xs text-slate-400">
+                              Camera has not been started for this athlete yet.
+                            </p>
+                            <p className="mt-1 text-[10px] text-slate-400">
+                              Start camera on Athlete Detail page to begin safety monitoring.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Navigation link to individual athlete detail page */}
+                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-end">
+                      <Link
+                        to={`/athletes/${athlete.id}`}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-teal hover:text-teal-dark hover:underline"
+                      >
+                        <span>View Athlete</span>
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </Link>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </section>
+
         {/* Split Section: Hardware Status & Alerts */}
         <div className="grid gap-6 lg:grid-cols-2">
           {/* Hardware Gateways */}
@@ -320,19 +486,17 @@ export function OverviewPage() {
                     <div key={device.deviceId} className="flex items-center justify-between py-2.5">
                       <div className="flex items-center gap-3">
                         <span
-                          className={`h-2.5 w-2.5 rounded-full ${
-                            isConnected ? 'bg-emerald-500' : 'bg-slate-300'
-                          }`}
+                          className={`h-2.5 w-2.5 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-slate-300'
+                            }`}
                         />
                         <div>
                           <div className="flex items-center gap-2">
                             <p className="text-xs font-semibold text-navy">{device.deviceId}</p>
                             <span
-                              className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
-                                isConnected
+                              className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${isConnected
                                   ? 'bg-emerald-50 text-emerald-700'
                                   : 'bg-slate-100 text-slate-600'
-                              }`}
+                                }`}
                             >
                               {isConnected ? 'CONNECTED' : 'DISCONNECTED'}
                             </span>
@@ -430,11 +594,10 @@ export function OverviewPage() {
                 >
                   <div className="flex items-center justify-between">
                     <span
-                      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
-                        session.status === 'active'
+                      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${session.status === 'active'
                           ? 'bg-emerald-100 text-emerald-800'
                           : 'bg-slate-100 text-slate-700'
-                      }`}
+                        }`}
                     >
                       {session.status}
                     </span>

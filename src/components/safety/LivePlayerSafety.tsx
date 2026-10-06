@@ -288,8 +288,10 @@ export function LivePlayerSafety({ athlete, className }: LivePlayerSafetyProps) 
     }
   }, [stopCamera])
 
-  const isSafe = assessment.status === 'SAFE'
   const isCameraActive = cameraState === 'CONNECTED'
+  const isWaitingForPlayer = isCameraActive && assessment.status === 'WAITING_FOR_PLAYER'
+  const isAttentionRequired = isCameraActive && assessment.status === 'ATTENTION_REQUIRED'
+  const isSafe = isCameraActive && assessment.status === 'SAFE' && assessment.isPoseDetected
 
   return (
     <section
@@ -304,18 +306,22 @@ export function LivePlayerSafety({ athlete, className }: LivePlayerSafetyProps) 
           <div
             className={cn(
               'flex h-8 w-8 items-center justify-center rounded-lg',
-              isCameraActive
-                ? isSafe
-                  ? 'bg-teal/10 text-teal'
-                  : 'bg-red-100 text-red-600'
-                : 'bg-slate-200 text-slate-600',
+              !isCameraActive
+                ? 'bg-slate-200 text-slate-600'
+                : isAttentionRequired
+                  ? 'bg-red-100 text-red-600'
+                  : isSafe
+                    ? 'bg-teal/10 text-teal'
+                    : 'bg-slate-200 text-slate-600',
             )}
           >
             {isCameraActive ? (
-              isSafe ? (
+              isAttentionRequired ? (
+                <ShieldAlert className="h-4 w-4" />
+              ) : isSafe ? (
                 <ShieldCheck className="h-4 w-4" />
               ) : (
-                <ShieldAlert className="h-4 w-4" />
+                <Eye className="h-4 w-4" />
               )
             ) : (
               <Camera className="h-4 w-4" />
@@ -519,8 +525,8 @@ export function LivePlayerSafety({ athlete, className }: LivePlayerSafetyProps) 
                           ● Tracking 1 Primary Athlete (Real-time skeleton active)
                         </span>
                       ) : (
-                        <span className="text-amber-300 animate-pulse">
-                          ⚠ Searching for athlete landmarks in frame
+                        <span className="text-slate-300 font-medium">
+                          ⚪ Searching for athlete landmarks in frame
                         </span>
                       )}
                     </div>
@@ -549,9 +555,11 @@ export function LivePlayerSafety({ athlete, className }: LivePlayerSafetyProps) 
                 'rounded-xl border p-5 flex flex-col transition-all duration-300',
                 !isCameraActive
                   ? 'border-slate-200 bg-slate-50/70 text-slate-600'
-                  : isSafe
-                    ? 'border-emerald-200 bg-emerald-50/80 text-emerald-950 shadow-xs'
-                    : 'border-red-300 bg-red-50 text-red-950 shadow-sm animate-pulse-subtle',
+                  : isAttentionRequired
+                    ? 'border-red-300 bg-red-50 text-red-950 shadow-sm animate-pulse-subtle'
+                    : isSafe
+                      ? 'border-emerald-200 bg-emerald-50/80 text-emerald-950 shadow-xs'
+                      : 'border-slate-200 bg-slate-50/80 text-slate-800 shadow-xs',
               )}
             >
               <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
@@ -561,15 +569,20 @@ export function LivePlayerSafety({ athlete, className }: LivePlayerSafetyProps) 
               {/* Status Badge */}
               <div className="mt-3 flex items-center gap-3">
                 {isCameraActive ? (
-                  isSafe ? (
+                  isAttentionRequired ? (
+                    <div className="flex items-center gap-2 rounded-lg bg-red-600 px-3.5 py-2 text-white shadow-xs">
+                      <AlertTriangle className="h-4 w-4 text-white animate-bounce" />
+                      <span className="text-base font-bold tracking-wide">ATTENTION REQUIRED</span>
+                    </div>
+                  ) : isSafe ? (
                     <div className="flex items-center gap-2 rounded-lg bg-emerald-600 px-3.5 py-2 text-white shadow-xs">
                       <span className="h-3 w-3 rounded-full bg-white animate-pulse" />
                       <span className="text-base font-bold tracking-wide">SAFE</span>
                     </div>
                   ) : (
-                    <div className="flex items-center gap-2 rounded-lg bg-red-600 px-3.5 py-2 text-white shadow-xs">
-                      <AlertTriangle className="h-4 w-4 text-white animate-bounce" />
-                      <span className="text-base font-bold tracking-wide">ATTENTION REQUIRED</span>
+                    <div className="flex items-center gap-2 rounded-lg bg-slate-200 border border-slate-300 px-3.5 py-2 text-slate-800 shadow-xs">
+                      <span className="h-2.5 w-2.5 rounded-full bg-white border border-slate-400" />
+                      <span className="text-sm font-bold tracking-wide">WAITING FOR PLAYER</span>
                     </div>
                   )
                 ) : (
@@ -585,7 +598,7 @@ export function LivePlayerSafety({ athlete, className }: LivePlayerSafetyProps) 
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-medium text-slate-600">Detection Confidence</span>
                   <span className="font-semibold font-mono text-navy">
-                    {isCameraActive ? `${assessment.confidence}%` : '--'}
+                    {isCameraActive && !isWaitingForPlayer ? `${assessment.confidence}%` : '--'}
                   </span>
                 </div>
                 {/* Progress Bar */}
@@ -593,13 +606,15 @@ export function LivePlayerSafety({ athlete, className }: LivePlayerSafetyProps) 
                   <div
                     className={cn(
                       'h-full transition-all duration-300',
-                      !isCameraActive
+                      !isCameraActive || isWaitingForPlayer
                         ? 'bg-slate-300 w-0'
-                        : isSafe
-                          ? 'bg-emerald-500'
-                          : 'bg-red-500',
+                        : isAttentionRequired
+                          ? 'bg-red-500'
+                          : 'bg-emerald-500',
                     )}
-                    style={{ width: `${isCameraActive ? assessment.confidence : 0}%` }}
+                    style={{
+                      width: `${isCameraActive && !isWaitingForPlayer ? assessment.confidence : 0}%`,
+                    }}
                   />
                 </div>
               </div>
@@ -614,15 +629,17 @@ export function LivePlayerSafety({ athlete, className }: LivePlayerSafetyProps) 
                     'mt-1 font-medium',
                     !isCameraActive
                       ? 'text-slate-500'
-                      : isSafe
-                        ? 'text-emerald-800'
-                        : 'text-red-800 font-semibold',
+                      : isAttentionRequired
+                        ? 'text-red-800 font-semibold'
+                        : isSafe
+                          ? 'text-emerald-800'
+                          : 'text-slate-600',
                   )}
                 >
                   {isCameraActive ? assessment.message : 'Camera is currently stopped.'}
                 </p>
 
-                {!isSafe && isCameraActive ? (
+                {isAttentionRequired ? (
                   <div className="mt-3 flex items-center justify-between pt-2 border-t border-red-100">
                     <span className="text-[11px] text-red-600">Please check the player.</span>
                     <button

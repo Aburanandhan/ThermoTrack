@@ -23,6 +23,7 @@ import type {
   TemperatureThresholds,
   TrainingSession,
 } from '../types/monitoring'
+import type { AthleteSafetySummary, PlayerSafetyAssessment } from '../types/safety'
 
 interface MonitoringContextValue {
   athletes: Athlete[]
@@ -32,6 +33,7 @@ interface MonitoringContextValue {
   sessions: TrainingSession[]
   stream: DataStreamStatus
   thresholds: TemperatureThresholds
+  safetyMap: Record<string, AthleteSafetySummary>
   loading: boolean
   error: string | null
   refresh: () => Promise<void>
@@ -39,6 +41,11 @@ interface MonitoringContextValue {
   addAthlete: (athlete: AthleteInput) => Promise<Athlete>
   updateAthlete: (athleteId: string, athlete: Partial<AthleteInput>) => Promise<Athlete>
   dismissAlert: (alertId: string) => Promise<void>
+  updateAthleteSafety: (
+    athleteId: string,
+    assessment: PlayerSafetyAssessment,
+    isMonitoringActive?: boolean,
+  ) => void
 }
 
 const MonitoringContext = createContext<MonitoringContextValue | null>(null)
@@ -49,6 +56,14 @@ export function MonitoringProvider({ children }: { children: ReactNode }) {
   const [devices, setDevices] = useState<DeviceStatus[]>([])
   const [alerts, setAlerts] = useState<MonitoringAlert[]>([])
   const [sessions, setSessions] = useState<TrainingSession[]>([])
+  const [safetyMap, setSafetyMap] = useState<Record<string, AthleteSafetySummary>>(() => {
+    try {
+      const cached = sessionStorage.getItem('thermotrack_safety_map')
+      return cached ? (JSON.parse(cached) as Record<string, AthleteSafetySummary>) : {}
+    } catch {
+      return {}
+    }
+  })
   const [stream, setStream] = useState<DataStreamStatus>({
     connected: false,
     lastUpdate: null,
@@ -394,6 +409,30 @@ export function MonitoringProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  const updateAthleteSafety = useCallback(
+    (athleteId: string, assessment: PlayerSafetyAssessment, isMonitoringActive = true) => {
+      setSafetyMap((prev) => {
+        const summary: AthleteSafetySummary = {
+          athleteId,
+          status: assessment.status,
+          confidence: assessment.confidence,
+          message: assessment.message,
+          eventType: assessment.eventType,
+          lastUpdate: new Date().toISOString(),
+          isMonitoringActive,
+        }
+        const next = { ...prev, [athleteId]: summary }
+        try {
+          sessionStorage.setItem('thermotrack_safety_map', JSON.stringify(next))
+        } catch {
+          // ignore
+        }
+        return next
+      })
+    },
+    [],
+  )
+
   const value = useMemo<MonitoringContextValue>(
     () => ({
       athletes,
@@ -403,6 +442,7 @@ export function MonitoringProvider({ children }: { children: ReactNode }) {
       sessions,
       stream,
       thresholds,
+      safetyMap,
       loading,
       error,
       refresh,
@@ -410,6 +450,7 @@ export function MonitoringProvider({ children }: { children: ReactNode }) {
       addAthlete,
       updateAthlete,
       dismissAlert,
+      updateAthleteSafety,
     }),
     [
       athletes,
@@ -419,6 +460,7 @@ export function MonitoringProvider({ children }: { children: ReactNode }) {
       sessions,
       stream,
       thresholds,
+      safetyMap,
       loading,
       error,
       refresh,
@@ -426,6 +468,7 @@ export function MonitoringProvider({ children }: { children: ReactNode }) {
       addAthlete,
       updateAthlete,
       dismissAlert,
+      updateAthleteSafety,
     ],
   )
 

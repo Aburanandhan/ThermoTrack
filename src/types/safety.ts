@@ -1,4 +1,4 @@
-export type SafetyStatus = 'SAFE' | 'ATTENTION_REQUIRED'
+export type SafetyStatus = 'SAFE' | 'ATTENTION_REQUIRED' | 'WAITING_FOR_PLAYER'
 
 export type CameraState =
   | 'OFF'
@@ -40,3 +40,14 @@ export interface SafetyDetectionEvent {
   confidence: number
   detectedAt: string
 }
+
+export interface AthleteSafetySummary {
+  athleteId: string
+  status: SafetyStatus
+  confidence: number
+  message: string
+  eventType?: AbnormalEventType | null
+  lastUpdate: string
+  isMonitoringActive: boolean
+}
+

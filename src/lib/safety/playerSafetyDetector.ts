@@ -48,7 +48,7 @@ export class PlayerSafetyDetector {
   ): PlayerSafetyAssessment {
     if (!this.isCameraActive) {
       return {
-        status: 'SAFE',
+        status: 'WAITING_FOR_PLAYER',
         confidence: 0,
         message: 'Camera is off',
         eventType: null,
@@ -178,8 +178,8 @@ export class PlayerSafetyDetector {
   private handleMissingPose(timestamp: number): PlayerSafetyAssessment {
     const elapsedSinceLastPose = timestamp - (this.lastPoseSeenTimestamp || timestamp)
 
-    // If visibility loss is brief (< 800ms), don't immediately alarm
-    if (elapsedSinceLastPose < 800 && this.history.length > 0) {
+    // If visibility loss is momentary (< 400ms) and we were actively tracking, hold state briefly
+    if (elapsedSinceLastPose < 400 && this.history.length > 0) {
       return {
         status: 'SAFE',
         confidence: Math.round(this.smoothedConfidence * 0.9),
@@ -191,12 +191,13 @@ export class PlayerSafetyDetector {
       }
     }
 
-    // Unreliable / no player detected: safety should NOT falsely claim SAFE
+    // When reliable athlete landmarks cannot currently be detected:
+    // WAITING FOR PLAYER state (non-alert)
     return {
-      status: 'ATTENTION_REQUIRED',
-      confidence: 85,
-      message: 'Check player/camera visibility.',
-      eventType: 'visibility_issue',
+      status: 'WAITING_FOR_PLAYER',
+      confidence: 0,
+      message: 'Position the player fully inside the camera frame.',
+      eventType: null,
       timestamp,
       isPoseDetected: false,
       trackingQuality: 0,
